@@ -22,6 +22,7 @@ CREATE TABLE users (
 -- Create devices table
 CREATE TABLE devices (
     device_id SERIAL PRIMARY KEY,
+    access_token VARCHAR(255) NOT NULL,
     sms_number VARCHAR(20) NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     control_1 BOOLEAN NOT NULL DEFAULT FALSE,

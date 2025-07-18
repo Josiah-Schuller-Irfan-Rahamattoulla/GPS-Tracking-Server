@@ -6,9 +6,7 @@ class PGDatabase:
     _instance = None
 
     def __init__(self, dsn: str):
-        self.connection = connect(
-            dsn=dsn
-        )
+        self.connection = connect(dsn=dsn)
         self.cursor = self.connection.cursor()
 
     @staticmethod

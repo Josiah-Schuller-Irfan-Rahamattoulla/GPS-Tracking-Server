@@ -66,6 +66,8 @@ pytest==8.4.1
     # via gps-tracking-api (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via pandas
+python-dotenv==1.1.1
+    # via gps-tracking-api (pyproject.toml)
 pytz==2025.2
     # via pandas
 pyyaml==6.0.2

@@ -28,6 +28,8 @@ pydantic-core==2.33.2
     # via pydantic
 python-dateutil==2.9.0.post0
     # via pandas
+python-dotenv==1.1.1
+    # via gps-tracking-api (pyproject.toml)
 pytz==2025.2
     # via pandas
 six==1.17.0

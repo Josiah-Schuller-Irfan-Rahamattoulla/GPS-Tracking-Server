@@ -1,10 +1,12 @@
 import uvicorn
-from fastapi import FastAPI
+from dotenv import load_dotenv
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from endpoints import device_data_endpoint
+from endpoints.authorisation import authorise_device
 
-# from app.api.v1.endpoints import users, items  # example endpoints
+load_dotenv()  # Load environment variables from .env file
 
 app = FastAPI(
     title="GPS Tracking Server API",
@@ -22,10 +24,10 @@ app.add_middleware(
 )
 
 # Include API routes
-# TODO add authorization
 app.include_router(
     router=device_data_endpoint.router,
     prefix="/v1",
+    dependencies=[Depends(authorise_device)],
     tags=["Endpoints for PCB device to call"],
 )
 

@@ -12,7 +12,7 @@ def add_gps_data(
 ):
     """
     Add GPS data to the database.
-    
+
     :param device_id: ID of the device sending the GPS data
     :param timestamp: Timestamp of the GPS data
     :param latitude: Latitude of the GPS data
@@ -22,5 +22,5 @@ def add_gps_data(
         with db_conn.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO gps_data (device_id, time, latitude, longitude) VALUES (%s, %s, %s, %s)",
-                (device_id, timestamp, latitude, longitude)
+                (device_id, timestamp, latitude, longitude),
             )

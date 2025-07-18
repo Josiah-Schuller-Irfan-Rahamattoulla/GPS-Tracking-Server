@@ -8,6 +8,7 @@ from db.gps_data import add_gps_data
 
 router = APIRouter()
 
+
 class DeviceData(BaseModel):
     device_id: int
     latitude: float
@@ -33,8 +34,8 @@ async def send_gps_data(device_data: DeviceData):
         device_id=device_data.device_id,
         timestamp=device_data.timestamp,
         latitude=device_data.latitude,
-        longitude=device_data.longitude
-    )    
+        longitude=device_data.longitude,
+    )
 
     return DeviceDataResponse(
         success=True,

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 class Device(BaseModel):
     # Row of "devices" table
     device_id: int
+    access_token: str
     sms_number: str
     created_at: datetime
     control_1: bool
@@ -12,12 +13,14 @@ class Device(BaseModel):
     control_3: bool
     control_4: bool
 
+
 class GPSData(BaseModel):
     # Row of "gps_data" table
     device_id: int
     time: datetime
     latitude: float
     longitude: float
+
 
 class User(BaseModel):
     # Row of "users" table
@@ -29,6 +32,7 @@ class User(BaseModel):
     hashed_password: str
     access_token: str
     created_at: datetime
+
 
 class UserDevice(BaseModel):
     # Row of "users_devices" table
