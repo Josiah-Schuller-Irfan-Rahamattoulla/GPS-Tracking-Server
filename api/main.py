@@ -3,8 +3,8 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from endpoints import device_data_endpoint
-from endpoints.authorisation import authorise_device
+from endpoints import app_user_endpoints, device_data_endpoints
+from endpoints.authorisation import authorise_device, authorise_user
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -25,10 +25,16 @@ app.add_middleware(
 
 # Include API routes
 app.include_router(
-    router=device_data_endpoint.router,
+    router=device_data_endpoints.router,
     prefix="/v1",
     dependencies=[Depends(authorise_device)],
     tags=["Endpoints for PCB device to call"],
+)
+app.include_router(
+    router=app_user_endpoints.router,
+    prefix="/v1",
+    dependencies=[Depends(authorise_user)],
+    tags=["Endpoints for app users to call"],
 )
 
 

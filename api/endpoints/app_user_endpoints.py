@@ -1,0 +1,97 @@
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
+
+from db.database import PGDatabase
+from db.devices import get_devices_by_user_id
+from db.gps_data import get_gps_data
+from db.models import GPSData
+from db.users import get_user
+
+router = APIRouter()
+
+class AppUserResponse(BaseModel):
+    user_id: int
+    email_address: str
+    phone_number: str
+    name: str
+
+@router.get("/user", response_model=AppUserResponse)
+async def get_user_info(
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Endpoint to retrieve user information.
+    """
+    db_conn = PGDatabase.connect_to_db()
+    user = get_user(db_conn=db_conn.connection, user_id=user_id)
+
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return AppUserResponse(
+        user_id=user.user_id,
+        email_address=user.email_address,
+        phone_number=user.phone_number,
+        name=user.name,
+    )
+
+
+class AppDeviceResponse(BaseModel):
+    device_id: int
+    sms_number: str
+    control_1: bool
+    control_2: bool
+    control_3: bool
+    control_4: bool
+
+@router.get("/devices", response_model=list[AppDeviceResponse])
+async def get_user_devices(
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Endpoint to retrieve devices associated with a user.
+    """
+    db_conn = PGDatabase.connect_to_db()
+
+    devices = get_devices_by_user_id(db_conn=db_conn.connection, user_id=user_id)
+
+    return [AppDeviceResponse(
+        device_id=device.device_id,
+        sms_number=device.sms_number,
+        control_1=device.control_1,
+        control_2=device.control_2,
+        control_3=device.control_3,
+        control_4=device.control_4,
+    ) for device in devices]
+
+
+class AppGPSDataResponse(BaseModel):
+    gps_data: list[GPSData]
+
+@router.get("/GPSData", response_model=AppGPSDataResponse)
+async def get_device_gps_data(
+    user_id: int = Query(..., description="User ID"),  # Required for authorisation
+    device_id: int = Query(..., description="Device ID"),
+    start_time: datetime = Query(..., description="Start time of the GPS data to fetch"),
+    end_time: datetime = Query(..., description="End time of the GPS data to fetch"),
+):
+    """
+    Endpoint to receive GPS data from a device.
+    """
+    if end_time <= start_time:
+        raise ValueError('end_time must be greater than start_time')
+
+    db_conn = PGDatabase.connect_to_db()
+
+    gps_data = get_gps_data(
+        db_conn=db_conn.connection,
+        device_id=device_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
+
+    return AppGPSDataResponse(
+        gps_data=gps_data,
+    )
