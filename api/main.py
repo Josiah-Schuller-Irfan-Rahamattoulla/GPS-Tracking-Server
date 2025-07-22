@@ -36,6 +36,11 @@ app.include_router(
     dependencies=[Depends(authorise_user)],
     tags=["Endpoints for app users to call"],
 )
+app.include_router(
+    router=app_user_endpoints.auth_router,
+    prefix="/v1",
+    tags=["App authentication endpoints"],
+)
 
 
 if __name__ == "__main__":
