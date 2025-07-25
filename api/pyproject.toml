@@ -1,0 +1,29 @@
+[project]
+name = "gps-tracking-api"
+version = "0.1.0"
+dependencies = [
+    "fastapi==0.116.1",
+    "gunicorn==23.0.0",
+    "pandas==2.3.1",
+    "python-dotenv==1.1.1",
+    "uvicorn==0.35.0",
+    "psycopg2-binary==2.9.10",
+]
+
+# Compile dependencies with:
+# uv pip compile --output-file requirements.txt pyproject.toml
+# Then install dependencies with:
+# uv pip sync requirements.txt
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.4.1",
+    "httpx==0.28.1",
+    "just==0.8.165",
+    "ruff==0.12.4",
+]
+
+# Compile dev dependencies with:
+# uv pip compile --output-file requirements-dev.txt --extra dev pyproject.toml
+# Then install dev dependencies with:
+# uv pip sync requirements-dev.txt
