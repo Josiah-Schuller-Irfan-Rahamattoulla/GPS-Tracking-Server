@@ -27,11 +27,19 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copy source files
+COPY db/ ./db/
 COPY endpoints/ ./endpoints/
 COPY main.py .
 
 # Set environment variables (optional)
 ENV PYTHONUNBUFFERED=1
 
+EXPOSE 8000
+
 # Start the app using Gunicorn with Uvicorn workers
-CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "4"]
+CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "4", "--log-level", "info"]
+
+# Build command:
+# docker build -t gps-tracker-server .
+# Run command:
+# docker run --rm -p 80:8000 -e DATABASE_URI="REDACTED" gps-tracker-server
