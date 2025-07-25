@@ -19,7 +19,8 @@ def get_devices_by_user_id(db_conn: PGConnection, user_id: int) -> list[Device]:
                 SELECT * FROM devices
                 JOIN users_devices ON devices.device_id = users_devices.device_id
                 WHERE users_devices.user_id = %s
-                """, (user_id,),
+                """,
+                (user_id,),
             )
             devices = cursor.fetchall()
             return [Device(**device) for device in devices] if devices else []
@@ -35,10 +36,13 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
     """
     with db_conn:
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("SELECT * FROM devices WHERE device_id = %s", (device_id,),)
+            cursor.execute(
+                "SELECT * FROM devices WHERE device_id = %s",
+                (device_id,),
+            )
             device = cursor.fetchone()
             return Device(**device) if device else None
-        
+
 
 def create_device(
     db_conn: PGConnection,
@@ -71,7 +75,15 @@ def create_device(
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
-                (device_id, access_token, sms_number, control_1, control_2, control_3, control_4,),
+                (
+                    device_id,
+                    access_token,
+                    sms_number,
+                    control_1,
+                    control_2,
+                    control_3,
+                    control_4,
+                ),
             )
 
 
@@ -87,5 +99,8 @@ def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) 
         with db_conn.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO users_devices (user_id, device_id) VALUES (%s, %s)",
-                (user_id, device_id,),
+                (
+                    user_id,
+                    device_id,
+                ),
             )

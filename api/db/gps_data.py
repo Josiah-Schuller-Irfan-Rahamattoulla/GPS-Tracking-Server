@@ -29,7 +29,12 @@ def add_gps_data(
             )
 
 
-def get_gps_data(db_conn: PGConnection, device_id: int, start_time: datetime, end_time: datetime):
+def get_gps_data(
+    db_conn: PGConnection,
+    device_id: int,
+    start_time: datetime,
+    end_time: datetime,
+):
     """
     Retrieve GPS data for a specific device within a time range.
 

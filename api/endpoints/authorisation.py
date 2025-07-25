@@ -41,8 +41,9 @@ async def authorise_device(
 
 
 async def authorise_user(
-    request: Request, access_token: str = Security(access_token_header),
-    user_id: int = Query(None, description="User ID")
+    request: Request,
+    access_token: str = Security(access_token_header),
+    user_id: int = Query(None, description="User ID"),
 ):
     """
     Authorises a user based on their access token.

@@ -18,10 +18,12 @@ class DeviceData(BaseModel):
     longitude: float
     timestamp: datetime
 
+
 class DeviceDataResponse(BaseModel):
     success: bool
     message: str
     data: DeviceData | None = None
+
 
 @router.post("/sendGPSData", response_model=DeviceDataResponse)
 async def send_gps_data(device_data: DeviceData):
@@ -53,6 +55,7 @@ class DeviceRegistrationData(BaseModel):
     control_3: bool | None = None
     control_4: bool | None = None
 
+
 @device_registration_router.post("/registerDevice")
 async def register_device(device_data: DeviceRegistrationData):
     """
@@ -61,11 +64,13 @@ async def register_device(device_data: DeviceRegistrationData):
     db_conn = PGDatabase.connect_to_db()
 
     # Check if device already exists
-    existing_device = get_device(db_conn=db_conn.connection, device_id=device_data.device_id)
+    existing_device = get_device(
+        db_conn=db_conn.connection, device_id=device_data.device_id
+    )
     if existing_device:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Device with this ID already exists"
+            detail="Device with this ID already exists",
         )
 
     create_device(
@@ -78,7 +83,7 @@ async def register_device(device_data: DeviceRegistrationData):
         control_3=device_data.control_3,
         control_4=device_data.control_4,
     )
-    
+
     return {"success": True, "message": "Device registered successfully"}
 
 
@@ -86,13 +91,14 @@ class UserDeviceRegistrationData(BaseModel):
     device_id: int
     user_id: int
 
+
 @router.post("/registerDeviceToUser")
 async def register_device_to_user(registration_data: UserDeviceRegistrationData):
     """
     Endpoint to register a device to a user.
     """
     db_conn = PGDatabase.connect_to_db()
-    
+
     create_user_device_row(
         db_conn=db_conn.connection,
         user_id=registration_data.user_id,
