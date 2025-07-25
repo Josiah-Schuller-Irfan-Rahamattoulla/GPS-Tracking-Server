@@ -25,10 +25,10 @@ CREATE TABLE devices (
     access_token VARCHAR(255) NOT NULL,
     sms_number VARCHAR(20) NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    control_1 BOOLEAN NOT NULL DEFAULT FALSE,
-    control_2 BOOLEAN NOT NULL DEFAULT FALSE,
-    control_3 BOOLEAN NOT NULL DEFAULT FALSE,
-    control_4 BOOLEAN NOT NULL DEFAULT FALSE
+    control_1 BOOLEAN DEFAULT NULL,
+    control_2 BOOLEAN DEFAULT NULL,
+    control_3 BOOLEAN DEFAULT NULL,
+    control_4 BOOLEAN DEFAULT NULL
 );
 
 -- Create users_devices junction table (many-to-many relationship)

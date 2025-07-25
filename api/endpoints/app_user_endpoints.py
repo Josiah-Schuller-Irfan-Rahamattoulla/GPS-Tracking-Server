@@ -132,10 +132,10 @@ async def get_user_info(
 class AppDeviceResponse(BaseModel):
     device_id: int
     sms_number: str
-    control_1: bool
-    control_2: bool
-    control_3: bool
-    control_4: bool
+    control_1: bool | None
+    control_2: bool | None
+    control_3: bool | None
+    control_4: bool | None
 
 @router.get("/devices", response_model=list[AppDeviceResponse])
 async def get_user_devices(

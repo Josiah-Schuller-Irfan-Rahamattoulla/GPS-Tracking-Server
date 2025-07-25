@@ -31,6 +31,11 @@ app.include_router(
     tags=["Endpoints for PCB device to call"],
 )
 app.include_router(
+    router=device_data_endpoints.device_registration_router,
+    prefix="/v1",
+    tags=["PCB device registration endpoints"],
+)
+app.include_router(
     router=app_user_endpoints.router,
     prefix="/v1",
     dependencies=[Depends(authorise_user)],

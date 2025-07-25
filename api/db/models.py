@@ -8,10 +8,10 @@ class Device(BaseModel):
     access_token: str
     sms_number: str
     created_at: datetime
-    control_1: bool
-    control_2: bool
-    control_3: bool
-    control_4: bool
+    control_1: bool | None
+    control_2: bool | None
+    control_3: bool | None
+    control_4: bool | None
 
 
 class GPSData(BaseModel):

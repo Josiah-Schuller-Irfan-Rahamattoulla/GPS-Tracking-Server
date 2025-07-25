@@ -14,7 +14,6 @@ async def authorise_device(
     """
     Authorises a device based on its device_id and access token.
     """
-    # TODO add device_secret to devices table and use it for authorisation here
     body = await request.json()
     device_id = body.get("device_id")
 
