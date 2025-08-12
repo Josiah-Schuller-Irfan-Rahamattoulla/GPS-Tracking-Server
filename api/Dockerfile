@@ -23,6 +23,11 @@ FROM python:3.13-slim-bookworm
 
 WORKDIR /app
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
@@ -37,9 +42,9 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Start the app using Gunicorn with Uvicorn workers
-CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "4", "--log-level", "info"]
+CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "1", "--log-level", "info"]
 
 # Build command:
 # docker build -t gps-tracker-server .
 # Run command:
-# docker run --rm -p 80:8000 -e DATABASE_URI="REDACTED" gps-tracker-server
+# docker run --rm -p 8000:8000 -e DATABASE_URI="REDACTED" gps-tracker-server
