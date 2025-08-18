@@ -6,6 +6,8 @@ on:
       - main
       - setup-aws-deployment
 
+  workflow_dispatch:
+
 env:
   AWS_REGION: ap-southeast-2
   ECR_REPOSITORY: gps-tracking
@@ -66,8 +68,8 @@ jobs:
 
     - name: Deploy to ECS
       env:
-        ECS_CLUSTER: ${{ secrets.ECS_CLUSTER_NAME }}
-        ECS_SERVICE: ${{ secrets.ECS_SERVICE_NAME }}
+        ECS_CLUSTER: ${{ secrets.AWS_ECS_CLUSTER_NAME }}
+        ECS_SERVICE: ${{ secrets.AWS_ECS_SERVICE_NAME }}
       run: |
         # Force a new deployment to pull the updated 'latest' image
         aws ecs update-service \
