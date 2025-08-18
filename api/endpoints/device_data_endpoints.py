@@ -1,9 +1,10 @@
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, status
+from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.database import PGDatabase
 from db.devices import create_device, create_user_device_row, get_device
 from db.gps_data import add_gps_data
 
@@ -22,7 +23,6 @@ class DeviceData(BaseModel):
 class DeviceDataResponse(BaseModel):
     success: bool
     message: str
-    data: DeviceData | None = None
 
 
 @router.post("/sendGPSData", response_model=DeviceDataResponse)
@@ -30,10 +30,10 @@ async def send_gps_data(device_data: DeviceData):
     """
     Endpoint to receive GPS data from a device.
     """
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
     add_gps_data(
-        db_conn=db_conn.connection,
+        db_conn=db_conn,
         device_id=device_data.device_id,
         timestamp=device_data.timestamp,
         latitude=device_data.latitude,
@@ -61,11 +61,11 @@ async def register_device(device_data: DeviceRegistrationData):
     """
     Endpoint to register a new device.
     """
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
     # Check if device already exists
     existing_device = get_device(
-        db_conn=db_conn.connection, device_id=device_data.device_id
+        db_conn=db_conn, device_id=device_data.device_id
     )
     if existing_device:
         raise HTTPException(
@@ -74,7 +74,7 @@ async def register_device(device_data: DeviceRegistrationData):
         )
 
     create_device(
-        db_conn=db_conn.connection,
+        db_conn=db_conn,
         device_id=device_data.device_id,
         access_token=device_data.access_token,
         sms_number=device_data.sms_number,
@@ -97,10 +97,10 @@ async def register_device_to_user(registration_data: UserDeviceRegistrationData)
     """
     Endpoint to register a device to a user.
     """
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
     create_user_device_row(
-        db_conn=db_conn.connection,
+        db_conn=db_conn,
         user_id=registration_data.user_id,
         device_id=registration_data.device_id,
     )
