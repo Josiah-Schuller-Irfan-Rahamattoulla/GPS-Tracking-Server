@@ -14,6 +14,11 @@ app = FastAPI(
     docs_url="/",
 )
 
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
 # Enable CORS (useful for frontend-backend communication)
 app.add_middleware(
     CORSMiddleware,
@@ -49,4 +54,4 @@ app.include_router(
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8081)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

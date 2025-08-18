@@ -1,7 +1,9 @@
+import os
+
 from fastapi import HTTPException, Request, Query, Security, status
 from fastapi.security import APIKeyHeader
+from psycopg2 import connect
 
-from db.database import PGDatabase
 from db.devices import get_device
 from db.users import get_user
 
@@ -27,8 +29,8 @@ async def authorise_device(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token is required"
         )
 
-    db_conn = PGDatabase.connect_to_db()
-    device = get_device(db_conn=db_conn.connection, device_id=device_id)
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    device = get_device(db_conn=db_conn, device_id=device_id)
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Device ID does not exist"
@@ -64,8 +66,8 @@ async def authorise_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token is required"
         )
 
-    db_conn = PGDatabase.connect_to_db()
-    user = get_user(db_conn=db_conn.connection, user_id=user_id)
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    user = get_user(db_conn=db_conn, user_id=user_id)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User ID does not exist"

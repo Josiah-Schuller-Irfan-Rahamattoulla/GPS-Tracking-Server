@@ -1,9 +1,10 @@
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
+from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.database import PGDatabase
 from db.devices import get_devices_by_user_id
 from db.gps_data import get_gps_data
 from db.models import GPSData
@@ -40,11 +41,11 @@ async def signup(request: SignupRequest):
     """
     Endpoint to create a new user account.
     """
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
     # Check if user already exists
     existing_user = get_user_by_email(
-        db_conn=db_conn.connection, email_address=request.email_address
+        db_conn=db_conn, email_address=request.email_address
     )
     if existing_user is not None:
         raise HTTPException(
@@ -55,7 +56,7 @@ async def signup(request: SignupRequest):
     # Create new user
     try:
         new_user = create_user(
-            db_conn=db_conn.connection,
+            db_conn=db_conn,
             email_address=request.email_address,
             phone_number=request.phone_number,
             name=request.name,
@@ -81,11 +82,11 @@ async def login(request: LoginRequest):
     """
     Endpoint to authenticate a user and return their access token.
     """
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
     # Verify user credentials
     user = verify_user_password(
-        db_conn=db_conn.connection,
+        db_conn=db_conn,
         email_address=request.email_address,
         password=request.password,
     )
@@ -119,8 +120,8 @@ async def get_user_info(
     """
     Endpoint to retrieve user information.
     """
-    db_conn = PGDatabase.connect_to_db()
-    user = get_user(db_conn=db_conn.connection, user_id=user_id)
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    user = get_user(db_conn=db_conn, user_id=user_id)
 
     if user is None:
         raise HTTPException(
@@ -151,9 +152,9 @@ async def get_user_devices(
     """
     Endpoint to retrieve devices associated with a user.
     """
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
-    devices = get_devices_by_user_id(db_conn=db_conn.connection, user_id=user_id)
+    devices = get_devices_by_user_id(db_conn=db_conn, user_id=user_id)
 
     return [
         AppDeviceResponse(
@@ -187,10 +188,10 @@ async def get_device_gps_data(
     if end_time <= start_time:
         raise ValueError("end_time must be greater than start_time")
 
-    db_conn = PGDatabase.connect_to_db()
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
     gps_data = get_gps_data(
-        db_conn=db_conn.connection,
+        db_conn=db_conn,
         device_id=device_id,
         start_time=start_time,
         end_time=end_time,
