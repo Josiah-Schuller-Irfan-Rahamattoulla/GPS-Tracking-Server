@@ -1,11 +1,6 @@
 name: Build and Deploy to AWS
 
 on:
-  push:
-    branches:
-      - main
-      - setup-aws-deployment
-
   workflow_dispatch:
 
 env:
