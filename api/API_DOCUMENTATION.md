@@ -4,7 +4,7 @@
 
 The GPS Tracking Server API is a FastAPI-based service for managing GPS tracking devices, users, and location data. The API provides endpoints for device registration, user authentication, GPS data submission, and data retrieval.
 
-**Base URL:** TBD
+**Base URL:** https://gpstracking.josiahschuller.au
 
 ## Authentication
 
