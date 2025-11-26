@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id
+from db.devices import get_devices_by_user_id, update_device_controls, get_device
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
@@ -199,4 +199,97 @@ async def get_device_gps_data(
 
     return AppGPSDataResponse(
         gps_data=gps_data,
+    )
+
+
+class UpdateDeviceControlsRequest(BaseModel):
+    control_1: bool | None = None
+    control_2: bool | None = None
+    control_3: bool | None = None
+    control_4: bool | None = None
+
+
+@router.put("/devices/{device_id}/controls", response_model=AppDeviceResponse)
+async def update_device_controls_endpoint(
+    device_id: int,
+    request: UpdateDeviceControlsRequest,
+    user_id: int = Query(..., description="User ID for authorization"),
+):
+    """
+    Update control flags for a device (kill switch, current draw, etc.).
+    All 4 control flags are set together.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+
+    # Verify the device belongs to the user
+    user_devices = get_devices_by_user_id(db_conn=db_conn, user_id=user_id)
+    device_ids = [d.device_id for d in user_devices]
+    
+    if device_id not in device_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device does not belong to this user",
+        )
+
+    # Update the device controls
+    updated_device = update_device_controls(
+        db_conn=db_conn,
+        device_id=device_id,
+        control_1=request.control_1,
+        control_2=request.control_2,
+        control_3=request.control_3,
+        control_4=request.control_4,
+    )
+
+    if updated_device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+
+    return AppDeviceResponse(
+        device_id=updated_device.device_id,
+        sms_number=updated_device.sms_number,
+        control_1=updated_device.control_1,
+        control_2=updated_device.control_2,
+        control_3=updated_device.control_3,
+        control_4=updated_device.control_4,
+    )
+
+
+@router.get("/devices/{device_id}", response_model=AppDeviceResponse)
+async def get_device_by_id(
+    device_id: int,
+    user_id: int = Query(..., description="User ID for authorization"),
+):
+    """
+    Get a single device by ID.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+
+    # Verify the device belongs to the user
+    user_devices = get_devices_by_user_id(db_conn=db_conn, user_id=user_id)
+    device_ids = [d.device_id for d in user_devices]
+    
+    if device_id not in device_ids:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Device does not belong to this user",
+        )
+
+    device = get_device(db_conn=db_conn, device_id=device_id)
+
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+
+    return AppDeviceResponse(
+        device_id=device.device_id,
+        sms_number=device.sms_number,
+        control_1=device.control_1,
+        control_2=device.control_2,
+        control_3=device.control_3,
+        control_4=device.control_4,
     )

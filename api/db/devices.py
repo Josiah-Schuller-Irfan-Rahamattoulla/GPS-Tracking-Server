@@ -104,3 +104,37 @@ def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) 
                     device_id,
                 ),
             )
+
+
+def update_device_controls(
+    db_conn: PGConnection,
+    device_id: int,
+    control_1: bool | None = None,
+    control_2: bool | None = None,
+    control_3: bool | None = None,
+    control_4: bool | None = None,
+) -> Device | None:
+    """
+    Update control flags for a device.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device to update
+    :param control_1: Control 1 state (optional)
+    :param control_2: Control 2 state (optional)
+    :param control_3: Control 3 state (optional)
+    :param control_4: Control 4 state (optional)
+    :return: Updated Device object if found, None otherwise
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                UPDATE devices
+                SET control_1 = %s, control_2 = %s, control_3 = %s, control_4 = %s
+                WHERE device_id = %s
+                RETURNING *
+                """,
+                (control_1, control_2, control_3, control_4, device_id),
+            )
+            device = cursor.fetchone()
+            return Device(**device) if device else None
