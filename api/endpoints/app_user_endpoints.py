@@ -9,6 +9,13 @@ from db.devices import get_devices_by_user_id, update_device_controls, get_devic
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
+from db.geofences import (
+    get_geofences_by_user_id,
+    get_geofence,
+    create_geofence,
+    update_geofence,
+    delete_geofence,
+)
 
 router = APIRouter()  # Router for authenticated endpoints
 auth_router = APIRouter()  # Router for unauthenticated endpoints (login/signup)
@@ -293,3 +300,158 @@ async def get_device_by_id(
         control_3=device.control_3,
         control_4=device.control_4,
     )
+
+
+# ============== Geofence Endpoints ==============
+
+class GeofenceResponse(BaseModel):
+    geofence_id: int
+    user_id: int
+    name: str
+    latitude: float
+    longitude: float
+    radius: int
+    enabled: bool
+
+
+class CreateGeofenceRequest(BaseModel):
+    name: str
+    latitude: float
+    longitude: float
+    radius: int = 100
+    enabled: bool = True
+
+
+class UpdateGeofenceRequest(BaseModel):
+    name: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    radius: int | None = None
+    enabled: bool | None = None
+
+
+@router.get("/geofences", response_model=list[GeofenceResponse])
+async def get_user_geofences(
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Get all geofences for a user.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    geofences = get_geofences_by_user_id(db_conn=db_conn, user_id=user_id)
+
+    return [
+        GeofenceResponse(
+            geofence_id=gf.geofence_id,
+            user_id=gf.user_id,
+            name=gf.name,
+            latitude=gf.latitude,
+            longitude=gf.longitude,
+            radius=gf.radius,
+            enabled=gf.enabled,
+        )
+        for gf in geofences
+    ]
+
+
+@router.post("/geofences", response_model=GeofenceResponse, status_code=status.HTTP_201_CREATED)
+async def create_user_geofence(
+    request: CreateGeofenceRequest,
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Create a new geofence for a user.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    geofence = create_geofence(
+        db_conn=db_conn,
+        user_id=user_id,
+        name=request.name,
+        latitude=request.latitude,
+        longitude=request.longitude,
+        radius=request.radius,
+        enabled=request.enabled,
+    )
+
+    return GeofenceResponse(
+        geofence_id=geofence.geofence_id,
+        user_id=geofence.user_id,
+        name=geofence.name,
+        latitude=geofence.latitude,
+        longitude=geofence.longitude,
+        radius=geofence.radius,
+        enabled=geofence.enabled,
+    )
+
+
+@router.put("/geofences/{geofence_id}", response_model=GeofenceResponse)
+async def update_user_geofence(
+    geofence_id: int,
+    request: UpdateGeofenceRequest,
+    user_id: int = Query(..., description="User ID for authorization"),
+):
+    """
+    Update a geofence. User must own the geofence.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Verify the geofence belongs to the user
+    existing = get_geofence(db_conn=db_conn, geofence_id=geofence_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Geofence not found",
+        )
+    if existing.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Geofence does not belong to this user",
+        )
+
+    geofence = update_geofence(
+        db_conn=db_conn,
+        geofence_id=geofence_id,
+        name=request.name,
+        latitude=request.latitude,
+        longitude=request.longitude,
+        radius=request.radius,
+        enabled=request.enabled,
+    )
+
+    return GeofenceResponse(
+        geofence_id=geofence.geofence_id,
+        user_id=geofence.user_id,
+        name=geofence.name,
+        latitude=geofence.latitude,
+        longitude=geofence.longitude,
+        radius=geofence.radius,
+        enabled=geofence.enabled,
+    )
+
+
+@router.delete("/geofences/{geofence_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_geofence(
+    geofence_id: int,
+    user_id: int = Query(..., description="User ID for authorization"),
+):
+    """
+    Delete a geofence. User must own the geofence.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Verify the geofence belongs to the user
+    existing = get_geofence(db_conn=db_conn, geofence_id=geofence_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Geofence not found",
+        )
+    if existing.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Geofence does not belong to this user",
+        )
+
+    delete_geofence(db_conn=db_conn, geofence_id=geofence_id)
+    return None

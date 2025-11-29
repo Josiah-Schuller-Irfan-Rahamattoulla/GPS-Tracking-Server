@@ -38,3 +38,15 @@ class UserDevice(BaseModel):
     # Row of "users_devices" table
     user_id: int
     device_id: int
+
+
+class Geofence(BaseModel):
+    # Row of "geofences" table
+    geofence_id: int
+    user_id: int
+    name: str
+    latitude: float
+    longitude: float
+    radius: int
+    enabled: bool
+    created_at: datetime

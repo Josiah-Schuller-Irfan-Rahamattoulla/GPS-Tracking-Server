@@ -2,6 +2,7 @@
 -- Generated from ERD diagram
 
 -- Drop tables if they exist (for clean recreation)
+DROP TABLE IF EXISTS geofences CASCADE;
 DROP TABLE IF EXISTS gps_data CASCADE;
 DROP TABLE IF EXISTS users_devices CASCADE;
 DROP TABLE IF EXISTS devices CASCADE;
@@ -86,3 +87,29 @@ COMMENT ON COLUMN gps_data.device_id IS 'Foreign key reference to devices table'
 COMMENT ON COLUMN gps_data.time IS 'Timestamp when GPS data was recorded';
 COMMENT ON COLUMN gps_data.latitude IS 'GPS latitude coordinate';
 COMMENT ON COLUMN gps_data.longitude IS 'GPS longitude coordinate';
+
+-- Create geofences table
+CREATE TABLE geofences (
+    geofence_id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    radius INTEGER NOT NULL DEFAULT 100,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+-- Create index for geofences
+CREATE INDEX idx_geofences_user_id ON geofences(user_id);
+
+COMMENT ON TABLE geofences IS 'Geofence zones for location-based alerts';
+COMMENT ON COLUMN geofences.geofence_id IS 'Primary key - unique geofence identifier';
+COMMENT ON COLUMN geofences.user_id IS 'Foreign key reference to users table';
+COMMENT ON COLUMN geofences.name IS 'Display name for the geofence';
+COMMENT ON COLUMN geofences.latitude IS 'Center latitude coordinate';
+COMMENT ON COLUMN geofences.longitude IS 'Center longitude coordinate';
+COMMENT ON COLUMN geofences.radius IS 'Radius of geofence in meters';
+COMMENT ON COLUMN geofences.enabled IS 'Whether geofence alerts are active';
+COMMENT ON COLUMN geofences.created_at IS 'Timestamp when geofence was created';
