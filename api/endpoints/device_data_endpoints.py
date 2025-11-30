@@ -18,6 +18,9 @@ class DeviceData(BaseModel):
     latitude: float
     longitude: float
     timestamp: datetime
+    speed: float | None = None
+    heading: float | None = None
+    trip_active: bool | None = None
 
 
 class DeviceDataResponse(BaseModel):
@@ -29,6 +32,7 @@ class DeviceDataResponse(BaseModel):
 async def send_gps_data(device_data: DeviceData):
     """
     Endpoint to receive GPS data from a device.
+    Supports speed, heading, and trip_active fields from hardware/mobile app.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
@@ -38,6 +42,9 @@ async def send_gps_data(device_data: DeviceData):
         timestamp=device_data.timestamp,
         latitude=device_data.latitude,
         longitude=device_data.longitude,
+        speed=device_data.speed,
+        heading=device_data.heading,
+        trip_active=device_data.trip_active,
     )
 
     return DeviceDataResponse(
@@ -50,6 +57,7 @@ class DeviceRegistrationData(BaseModel):
     device_id: int
     access_token: str
     sms_number: str
+    name: str | None = None
     control_1: bool | None = None
     control_2: bool | None = None
     control_3: bool | None = None
@@ -78,6 +86,7 @@ async def register_device(device_data: DeviceRegistrationData):
         device_id=device_data.device_id,
         access_token=device_data.access_token,
         sms_number=device_data.sms_number,
+        name=device_data.name,
         control_1=device_data.control_1,
         control_2=device_data.control_2,
         control_3=device_data.control_3,

@@ -1,11 +1,11 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id, update_device_controls, get_device
+from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, get_device
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
@@ -146,10 +146,13 @@ async def get_user_info(
 class AppDeviceResponse(BaseModel):
     device_id: int
     sms_number: str
+    name: str | None = None
     control_1: bool | None
     control_2: bool | None
     control_3: bool | None
     control_4: bool | None
+    control_version: int | None = None
+    controls_updated_at: datetime | None = None
 
 
 @router.get("/devices", response_model=list[AppDeviceResponse])
@@ -167,10 +170,13 @@ async def get_user_devices(
         AppDeviceResponse(
             device_id=device.device_id,
             sms_number=device.sms_number,
+            name=device.name,
             control_1=device.control_1,
             control_2=device.control_2,
             control_3=device.control_3,
             control_4=device.control_4,
+            control_version=device.control_version,
+            controls_updated_at=device.controls_updated_at,
         )
         for device in devices
     ]
@@ -196,6 +202,14 @@ async def get_device_gps_data(
         raise ValueError("end_time must be greater than start_time")
 
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Verify user owns device
+    device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found or not owned by user",
+        )
 
     gps_data = get_gps_data(
         db_conn=db_conn,
@@ -209,96 +223,144 @@ async def get_device_gps_data(
     )
 
 
-class UpdateDeviceControlsRequest(BaseModel):
+@router.get("/devices/{device_id}", response_model=AppDeviceResponse)
+async def get_device_endpoint(
+    device_id: int,
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Get a single device by ID. Verifies user owns the device.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found or not owned by user",
+        )
+    
+    return AppDeviceResponse(
+        device_id=device.device_id,
+        sms_number=device.sms_number,
+        name=device.name,
+        control_1=device.control_1,
+        control_2=device.control_2,
+        control_3=device.control_3,
+        control_4=device.control_4,
+        control_version=device.control_version,
+        controls_updated_at=device.controls_updated_at,
+    )
+
+
+class DeviceControlsUpdate(BaseModel):
     control_1: bool | None = None
     control_2: bool | None = None
     control_3: bool | None = None
     control_4: bool | None = None
+    expected_version: int | None = None  # For optimistic locking
 
 
 @router.put("/devices/{device_id}/controls", response_model=AppDeviceResponse)
 async def update_device_controls_endpoint(
     device_id: int,
-    request: UpdateDeviceControlsRequest,
-    user_id: int = Query(..., description="User ID for authorization"),
+    controls: DeviceControlsUpdate,
+    user_id: int = Query(..., description="User ID"),
 ):
     """
-    Update control flags for a device (kill switch, current draw, etc.).
-    All 4 control flags are set together.
+    Update device control flags (kill switch, etc.).
+    Supports optimistic locking via expected_version.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-
-    # Verify the device belongs to the user
-    user_devices = get_devices_by_user_id(db_conn=db_conn, user_id=user_id)
-    device_ids = [d.device_id for d in user_devices]
     
-    if device_id not in device_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Device does not belong to this user",
-        )
-
-    # Update the device controls
     updated_device = update_device_controls(
         db_conn=db_conn,
         device_id=device_id,
-        control_1=request.control_1,
-        control_2=request.control_2,
-        control_3=request.control_3,
-        control_4=request.control_4,
+        user_id=user_id,
+        control_1=controls.control_1,
+        control_2=controls.control_2,
+        control_3=controls.control_3,
+        control_4=controls.control_4,
+        expected_version=controls.expected_version,
     )
-
-    if updated_device is None:
+    
+    if not updated_device:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found",
+            detail="Device not found, not owned by user, or version conflict",
         )
-
+    
     return AppDeviceResponse(
         device_id=updated_device.device_id,
         sms_number=updated_device.sms_number,
+        name=updated_device.name,
         control_1=updated_device.control_1,
         control_2=updated_device.control_2,
         control_3=updated_device.control_3,
         control_4=updated_device.control_4,
+        control_version=updated_device.control_version,
+        controls_updated_at=updated_device.controls_updated_at,
     )
 
 
-@router.get("/devices/{device_id}", response_model=AppDeviceResponse)
-async def get_device_by_id(
+class TripStatusResponse(BaseModel):
+    trip_active: bool
+    last_trip_time: datetime | None = None
+    last_gps_time: datetime | None = None
+
+
+@router.get("/devices/{device_id}/trip", response_model=TripStatusResponse)
+async def get_device_trip_status(
     device_id: int,
-    user_id: int = Query(..., description="User ID for authorization"),
+    user_id: int = Query(..., description="User ID"),
 ):
     """
-    Get a single device by ID.
+    Get current trip status from hardware IMU detection.
+    Returns the latest trip_active flag from GPS data.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-
-    # Verify the device belongs to the user
-    user_devices = get_devices_by_user_id(db_conn=db_conn, user_id=user_id)
-    device_ids = [d.device_id for d in user_devices]
     
-    if device_id not in device_ids:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Device does not belong to this user",
-        )
-
-    device = get_device(db_conn=db_conn, device_id=device_id)
-
-    if device is None:
+    # Verify user owns device
+    device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+    if not device:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found",
+            detail="Device not found or not owned by user",
         )
-
-    return AppDeviceResponse(
-        device_id=device.device_id,
-        sms_number=device.sms_number,
-        control_1=device.control_1,
-        control_2=device.control_2,
-        control_3=device.control_3,
-        control_4=device.control_4,
+    
+    # Get latest GPS data with trip_active
+    end_time = datetime.utcnow()
+    start_time = end_time - timedelta(hours=1)  # Last hour
+    
+    gps_records = get_gps_data(
+        db_conn=db_conn,
+        device_id=device_id,
+        start_time=start_time,
+        end_time=end_time,
+    )
+    
+    # Find latest record with trip_active
+    trip_active = False
+    last_trip_time = None
+    last_gps_time = None
+    
+    if gps_records:
+        # Sort by time descending
+        gps_records.sort(key=lambda x: x.time, reverse=True)
+        latest = gps_records[0]
+        last_gps_time = latest.time
+        trip_active = latest.trip_active if latest.trip_active is not None else False
+        
+        # Find last time trip was active
+        for record in gps_records:
+            if record.trip_active:
+                last_trip_time = record.time
+                break
+    
+    return TripStatusResponse(
+        trip_active=trip_active,
+        last_trip_time=last_trip_time,
+        last_gps_time=last_gps_time,
     )
 
 
@@ -310,53 +372,56 @@ class GeofenceResponse(BaseModel):
     name: str
     latitude: float
     longitude: float
-    radius: int
+    radius: float
     enabled: bool
+    created_at: datetime
 
 
-class CreateGeofenceRequest(BaseModel):
+class GeofenceCreate(BaseModel):
     name: str
     latitude: float
     longitude: float
-    radius: int = 100
+    radius: float = 100.0
     enabled: bool = True
 
 
-class UpdateGeofenceRequest(BaseModel):
+class GeofenceUpdate(BaseModel):
     name: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    radius: int | None = None
+    radius: float | None = None
     enabled: bool | None = None
 
 
 @router.get("/geofences", response_model=list[GeofenceResponse])
-async def get_user_geofences(
+async def get_geofences(
     user_id: int = Query(..., description="User ID"),
 ):
     """
     Get all geofences for a user.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
     geofences = get_geofences_by_user_id(db_conn=db_conn, user_id=user_id)
-
+    
     return [
         GeofenceResponse(
-            geofence_id=gf.geofence_id,
-            user_id=gf.user_id,
-            name=gf.name,
-            latitude=gf.latitude,
-            longitude=gf.longitude,
-            radius=gf.radius,
-            enabled=gf.enabled,
+            geofence_id=g.geofence_id,
+            user_id=g.user_id,
+            name=g.name,
+            latitude=g.latitude,
+            longitude=g.longitude,
+            radius=g.radius,
+            enabled=g.enabled,
+            created_at=g.created_at,
         )
-        for gf in geofences
+        for g in geofences
     ]
 
 
-@router.post("/geofences", response_model=GeofenceResponse, status_code=status.HTTP_201_CREATED)
-async def create_user_geofence(
-    request: CreateGeofenceRequest,
+@router.post("/geofences", response_model=GeofenceResponse)
+async def create_geofence_endpoint(
+    geofence: GeofenceCreate,
     user_id: int = Query(..., description="User ID"),
 ):
     """
@@ -364,94 +429,88 @@ async def create_user_geofence(
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
     
-    geofence = create_geofence(
+    new_geofence = create_geofence(
         db_conn=db_conn,
         user_id=user_id,
-        name=request.name,
-        latitude=request.latitude,
-        longitude=request.longitude,
-        radius=request.radius,
-        enabled=request.enabled,
-    )
-
-    return GeofenceResponse(
-        geofence_id=geofence.geofence_id,
-        user_id=geofence.user_id,
         name=geofence.name,
         latitude=geofence.latitude,
         longitude=geofence.longitude,
         radius=geofence.radius,
         enabled=geofence.enabled,
+    )
+    
+    return GeofenceResponse(
+        geofence_id=new_geofence.geofence_id,
+        user_id=new_geofence.user_id,
+        name=new_geofence.name,
+        latitude=new_geofence.latitude,
+        longitude=new_geofence.longitude,
+        radius=new_geofence.radius,
+        enabled=new_geofence.enabled,
+        created_at=new_geofence.created_at,
     )
 
 
 @router.put("/geofences/{geofence_id}", response_model=GeofenceResponse)
-async def update_user_geofence(
+async def update_geofence_endpoint(
     geofence_id: int,
-    request: UpdateGeofenceRequest,
-    user_id: int = Query(..., description="User ID for authorization"),
+    geofence: GeofenceUpdate,
+    user_id: int = Query(..., description="User ID"),
 ):
     """
-    Update a geofence. User must own the geofence.
+    Update an existing geofence.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
     
-    # Verify the geofence belongs to the user
-    existing = get_geofence(db_conn=db_conn, geofence_id=geofence_id)
-    if existing is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Geofence not found",
-        )
-    if existing.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Geofence does not belong to this user",
-        )
-
-    geofence = update_geofence(
+    updated = update_geofence(
         db_conn=db_conn,
         geofence_id=geofence_id,
-        name=request.name,
-        latitude=request.latitude,
-        longitude=request.longitude,
-        radius=request.radius,
-        enabled=request.enabled,
-    )
-
-    return GeofenceResponse(
-        geofence_id=geofence.geofence_id,
-        user_id=geofence.user_id,
+        user_id=user_id,
         name=geofence.name,
         latitude=geofence.latitude,
         longitude=geofence.longitude,
         radius=geofence.radius,
         enabled=geofence.enabled,
     )
+    
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Geofence not found or not owned by user",
+        )
+    
+    return GeofenceResponse(
+        geofence_id=updated.geofence_id,
+        user_id=updated.user_id,
+        name=updated.name,
+        latitude=updated.latitude,
+        longitude=updated.longitude,
+        radius=updated.radius,
+        enabled=updated.enabled,
+        created_at=updated.created_at,
+    )
 
 
-@router.delete("/geofences/{geofence_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user_geofence(
+@router.delete("/geofences/{geofence_id}")
+async def delete_geofence_endpoint(
     geofence_id: int,
-    user_id: int = Query(..., description="User ID for authorization"),
+    user_id: int = Query(..., description="User ID"),
 ):
     """
-    Delete a geofence. User must own the geofence.
+    Delete a geofence.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
     
-    # Verify the geofence belongs to the user
-    existing = get_geofence(db_conn=db_conn, geofence_id=geofence_id)
-    if existing is None:
+    deleted = delete_geofence(
+        db_conn=db_conn,
+        geofence_id=geofence_id,
+        user_id=user_id,
+    )
+    
+    if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Geofence not found",
+            detail="Geofence not found or not owned by user",
         )
-    if existing.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Geofence does not belong to this user",
-        )
-
-    delete_geofence(db_conn=db_conn, geofence_id=geofence_id)
-    return None
+    
+    return {"success": True, "message": "Geofence deleted successfully"}

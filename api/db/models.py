@@ -8,10 +8,13 @@ class Device(BaseModel):
     access_token: str
     sms_number: str
     created_at: datetime
+    name: str | None = None
     control_1: bool | None
     control_2: bool | None
     control_3: bool | None
     control_4: bool | None
+    control_version: int | None = None
+    controls_updated_at: datetime | None = None
 
 
 class GPSData(BaseModel):
@@ -20,6 +23,9 @@ class GPSData(BaseModel):
     time: datetime
     latitude: float
     longitude: float
+    speed: float | None = None
+    heading: float | None = None
+    trip_active: bool | None = None
 
 
 class User(BaseModel):
@@ -47,6 +53,6 @@ class Geofence(BaseModel):
     name: str
     latitude: float
     longitude: float
-    radius: int
+    radius: float
     enabled: bool
     created_at: datetime
