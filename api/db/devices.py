@@ -93,6 +93,7 @@ def create_device(
 def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) -> None:
     """
     Create a row in the users_devices table to link a user and a device.
+    If the link already exists, this is a no-op (handles duplicate registration gracefully).
 
     :param db_conn: Database connection object
     :param user_id: ID of the user
@@ -100,12 +101,15 @@ def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) 
     """
     with db_conn:
         with db_conn.cursor() as cursor:
+            # Use ON CONFLICT DO NOTHING to handle duplicate links gracefully
+            # PRIMARY KEY is on (user_id, device_id), so ON CONFLICT will catch duplicates
             cursor.execute(
-                "INSERT INTO users_devices (user_id, device_id) VALUES (%s, %s)",
-                (
-                    user_id,
-                    device_id,
-                ),
+                """
+                INSERT INTO users_devices (user_id, device_id) 
+                VALUES (%s, %s)
+                ON CONFLICT (user_id, device_id) DO NOTHING
+                """,
+                (user_id, device_id),
             )
 
 

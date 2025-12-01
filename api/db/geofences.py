@@ -46,7 +46,7 @@ def create_geofence(
     name: str,
     latitude: float,
     longitude: float,
-    radius: int = 100,
+    radius: float = 100.0,
     enabled: bool = True,
 ) -> Geofence:
     """
@@ -78,23 +78,25 @@ def create_geofence(
 def update_geofence(
     db_conn: PGConnection,
     geofence_id: int,
+    user_id: int,
     name: str | None = None,
     latitude: float | None = None,
     longitude: float | None = None,
-    radius: int | None = None,
+    radius: float | None = None,
     enabled: bool | None = None,
 ) -> Geofence | None:
     """
-    Update an existing geofence in the database.
+    Update an existing geofence in the database. Verifies user owns the geofence.
 
     :param db_conn: Database connection object
     :param geofence_id: ID of the geofence to update
+    :param user_id: ID of the user (for verification)
     :param name: New name (optional)
     :param latitude: New latitude (optional)
     :param longitude: New longitude (optional)
     :param radius: New radius (optional)
     :param enabled: New enabled state (optional)
-    :return: Updated Geofence object, or None if not found
+    :return: Updated Geofence object, or None if not found or not owned by user
     """
     # Build dynamic update query
     updates = []
@@ -117,32 +119,38 @@ def update_geofence(
         values.append(enabled)
     
     if not updates:
-        return get_geofence(db_conn, geofence_id)
+        # No updates, just verify ownership and return existing
+        geofence = get_geofence(db_conn, geofence_id)
+        if geofence and geofence.user_id == user_id:
+            return geofence
+        return None
     
-    values.append(geofence_id)
+    values.extend([geofence_id, user_id])
     
     with db_conn:
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
-                f"UPDATE geofences SET {', '.join(updates)} WHERE geofence_id = %s RETURNING *",
+                f"UPDATE geofences SET {', '.join(updates)} WHERE geofence_id = %s AND user_id = %s RETURNING *",
                 values,
             )
             geofence = cursor.fetchone()
             return Geofence(**geofence) if geofence else None
 
 
-def delete_geofence(db_conn: PGConnection, geofence_id: int) -> bool:
+def delete_geofence(db_conn: PGConnection, geofence_id: int, user_id: int) -> bool:
     """
-    Delete a geofence from the database.
+    Delete a geofence from the database. Verifies user owns the geofence.
 
     :param db_conn: Database connection object
     :param geofence_id: ID of the geofence to delete
-    :return: True if deleted, False if not found
+    :param user_id: ID of the user (for verification)
+    :return: True if deleted, False if not found or not owned by user
     """
     with db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute(
-                "DELETE FROM geofences WHERE geofence_id = %s",
-                (geofence_id,),
+                "DELETE FROM geofences WHERE geofence_id = %s AND user_id = %s",
+                (geofence_id, user_id),
             )
             return cursor.rowcount > 0
+

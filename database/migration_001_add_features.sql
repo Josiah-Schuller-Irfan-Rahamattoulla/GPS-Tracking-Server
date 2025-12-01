@@ -44,3 +44,4 @@ COMMENT ON COLUMN devices.control_version IS 'Version number for optimistic lock
 COMMENT ON COLUMN devices.controls_updated_at IS 'Timestamp of last control update';
 COMMENT ON TABLE geofences IS 'Geofence definitions for users';
 
+
