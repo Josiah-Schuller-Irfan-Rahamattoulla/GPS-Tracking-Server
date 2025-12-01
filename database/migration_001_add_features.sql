@@ -45,3 +45,18 @@ COMMENT ON COLUMN devices.controls_updated_at IS 'Timestamp of last control upda
 COMMENT ON TABLE geofences IS 'Geofence definitions for users';
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

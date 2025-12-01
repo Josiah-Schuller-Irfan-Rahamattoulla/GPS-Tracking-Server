@@ -320,3 +320,18 @@ After implementing, test:
 - Consider partitioning `gps_data` table by time for better performance
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
