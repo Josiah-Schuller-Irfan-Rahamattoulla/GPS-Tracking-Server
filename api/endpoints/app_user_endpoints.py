@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id, update_device_controls, get_device
+from db.devices import get_devices_by_user_id, update_device_controls, get_device, delete_all_devices
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
@@ -455,3 +455,42 @@ async def delete_user_geofence(
 
     delete_geofence(db_conn=db_conn, geofence_id=geofence_id)
     return None
+
+
+# ============== Device Management Endpoints ==============
+
+class DeleteAllDevicesResponse(BaseModel):
+    success: bool
+    message: str
+    devices_deleted: int
+
+
+@router.delete("/devices/all", response_model=DeleteAllDevicesResponse)
+async def delete_all_user_devices(
+    user_id: int = Query(..., description="User ID for authorization"),
+):
+    """
+    Delete all devices associated with a user.
+    This will delete:
+    - All GPS data for those devices
+    - All geofences for those devices
+    - All user-device links
+    - The devices themselves
+    
+    WARNING: This action cannot be undone!
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    try:
+        devices_deleted = delete_all_devices(db_conn=db_conn, user_id=user_id)
+        
+        return DeleteAllDevicesResponse(
+            success=True,
+            message=f"Successfully deleted {devices_deleted} device(s) and all associated data",
+            devices_deleted=devices_deleted,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete devices: {str(e)}",
+        )
