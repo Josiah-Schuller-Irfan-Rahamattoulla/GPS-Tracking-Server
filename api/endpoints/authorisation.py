@@ -53,8 +53,12 @@ async def authorise_user(
     # Try getting user_id from the query parameters first
     if user_id is None:
         # If user_id is not provided in the query, try to get it from the request body
-        body = await request.json()
-        user_id = body.get("user_id")
+        try:
+            body = await request.json()
+            user_id = body.get("user_id")
+        except Exception:
+            # Body might not be JSON or might be empty (e.g., GET requests)
+            pass
 
     if not user_id:
         raise HTTPException(
