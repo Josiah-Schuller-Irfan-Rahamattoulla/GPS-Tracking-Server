@@ -136,6 +136,59 @@ def get_device_by_user(db_conn: PGConnection, device_id: int, user_id: int) -> D
             return Device(**device) if device else None
 
 
+def delete_all_devices(db_conn: PGConnection, user_id: int) -> int:
+    """
+    Delete all devices associated with a user.
+    This deletes from users_devices (user-device links) and devices tables.
+    Also deletes associated GPS data and geofences.
+
+    :param db_conn: Database connection object
+    :param user_id: ID of the user whose devices should be deleted
+    :return: Number of devices deleted
+    """
+    with db_conn:
+        with db_conn.cursor() as cursor:
+            # Get device IDs for this user
+            cursor.execute(
+                "SELECT device_id FROM users_devices WHERE user_id = %s",
+                (user_id,)
+            )
+            device_ids = [row[0] for row in cursor.fetchall()]
+            
+            if not device_ids:
+                return 0
+            
+            # Delete GPS data for these devices
+            cursor.execute(
+                "DELETE FROM gps_data WHERE device_id = ANY(%s)",
+                (device_ids,)
+            )
+            
+            # Delete geofences for these devices (if geofences table exists and has device_id)
+            try:
+                cursor.execute(
+                    "DELETE FROM geofences WHERE device_id = ANY(%s)",
+                    (device_ids,)
+                )
+            except Exception:
+                # Geofences table might not have device_id or might not exist
+                pass
+            
+            # Delete user-device links
+            cursor.execute(
+                "DELETE FROM users_devices WHERE user_id = %s",
+                (user_id,)
+            )
+            
+            # Delete devices themselves
+            cursor.execute(
+                "DELETE FROM devices WHERE device_id = ANY(%s)",
+                (device_ids,)
+            )
+            
+            return len(device_ids)
+
+
 def update_device_controls(
     db_conn: PGConnection,
     device_id: int,
