@@ -62,3 +62,40 @@ COMMENT ON TABLE geofences IS 'Geofence definitions for users';
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
