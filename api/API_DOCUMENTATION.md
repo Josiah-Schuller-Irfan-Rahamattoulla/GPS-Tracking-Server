@@ -94,12 +94,17 @@ Register a new GPS tracking device.
   "device_id": 12345,
   "access_token": "device_access_token_here",
   "sms_number": "+1234567890",
+  "name": "My Vehicle",
   "control_1": true,
   "control_2": false,
   "control_3": null,
   "control_4": null
 }
 ```
+
+**Notes:**
+- `name`: User-friendly device name (optional)
+- `control_*`: Initial control flag states (optional)
 
 **Response:**
 ```json
@@ -158,9 +163,17 @@ Submit GPS location data from a device.
   "device_id": 12345,
   "latitude": 37.7749,
   "longitude": -122.4194,
-  "timestamp": "2025-08-07T14:30:00Z"
+  "timestamp": "2025-08-07T14:30:00Z",
+  "speed": 65.5,
+  "heading": 180.0,
+  "trip_active": true
 }
 ```
+
+**Notes:**
+- `speed`: Vehicle speed in km/h (optional)
+- `heading`: Compass heading in degrees 0-360 (optional)
+- `trip_active`: Hardware IMU-detected trip status (optional)
 
 **Response:**
 ```json
@@ -175,6 +188,35 @@ Submit GPS location data from a device.
 - `200`: GPS data saved successfully
 - `401`: Invalid device access token
 - `400`: Missing or invalid data
+
+---
+
+#### GET `/v1/getDeviceControls`
+Retrieve device control settings (called by device firmware).
+
+**Headers:**
+- `Access-Token`: Device access token
+
+**Query Parameters:**
+- `device_id` (required): Device ID
+
+**Response:**
+```json
+{
+  "device_id": 12345,
+  "control_1": true,
+  "control_2": false,
+  "control_3": null,
+  "control_4": null,
+  "control_version": 2,
+  "controls_updated_at": "2025-08-07T14:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200`: Device controls retrieved successfully
+- `401`: Invalid device access token
+- `404`: Device not found
 
 ---
 
@@ -221,10 +263,13 @@ Retrieve devices associated with a user.
   {
     "device_id": 12345,
     "sms_number": "+1234567890",
+    "name": "My Vehicle",
     "control_1": true,
     "control_2": false,
     "control_3": null,
-    "control_4": null
+    "control_4": null,
+    "control_version": 2,
+    "controls_updated_at": "2025-08-07T14:30:00Z"
   }
 ]
 ```
@@ -255,13 +300,19 @@ Retrieve GPS data for a specific device within a time range.
       "device_id": 12345,
       "time": "2025-08-07T14:30:00Z",
       "latitude": 37.7749,
-      "longitude": -122.4194
+      "longitude": -122.4194,
+      "speed": 65.5,
+      "heading": 180.0,
+      "trip_active": true
     },
     {
       "device_id": 12345,
       "time": "2025-08-07T14:31:00Z",
       "latitude": 37.7750,
-      "longitude": -122.4195
+      "longitude": -122.4195,
+      "speed": 64.2,
+      "heading": 180.0,
+      "trip_active": true
     }
   ]
 }
@@ -273,6 +324,268 @@ Retrieve GPS data for a specific device within a time range.
 - `400`: Invalid time range (end_time must be greater than start_time)
 
 ---
+
+#### GET `/v1/devices/{device_id}`
+Retrieve a single device by ID with control settings.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID (for authorization)
+
+**Response:**
+```json
+{
+  "device_id": 12345,
+  "sms_number": "+1234567890",
+  "name": "My Vehicle",
+  "control_1": true,
+  "control_2": false,
+  "control_3": null,
+  "control_4": null,
+  "control_version": 2,
+  "controls_updated_at": "2025-08-07T14:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200`: Device retrieved successfully
+- `401`: Invalid user access token
+- `404`: Device not found or not owned by user
+
+---
+
+#### PUT `/v1/devices/{device_id}/controls`
+Update device control flags (kill switch, etc.) with optimistic locking support.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID (for authorization)
+
+**Request Body:**
+```json
+{
+  "control_1": true,
+  "control_2": false,
+  "control_3": null,
+  "control_4": null,
+  "expected_version": 2
+}
+```
+
+**Notes:**
+- `expected_version` is optional and used for optimistic locking to prevent concurrent update conflicts
+- At least one control field must be provided
+
+**Response:**
+```json
+{
+  "device_id": 12345,
+  "sms_number": "+1234567890",
+  "name": "My Vehicle",
+  "control_1": true,
+  "control_2": false,
+  "control_3": null,
+  "control_4": null,
+  "control_version": 3,
+  "controls_updated_at": "2025-08-07T14:35:00Z"
+}
+```
+
+**Status Codes:**
+- `200`: Device controls updated successfully
+- `401`: Invalid user access token
+- `404`: Device not found or not owned by user or version conflict
+
+---
+
+#### GET `/v1/devices/{device_id}/trip`
+Get current trip status from hardware IMU detection.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID (for authorization)
+
+**Response:**
+```json
+{
+  "trip_active": true,
+  "last_trip_time": "2025-08-07T14:15:00Z",
+  "last_gps_time": "2025-08-07T14:35:00Z"
+}
+```
+
+**Status Codes:**
+- `200`: Trip status retrieved successfully
+- `401`: Invalid user access token
+- `404`: Device not found or not owned by user
+
+---
+
+### Geofence Endpoints
+
+#### GET `/v1/geofences`
+Retrieve all geofences for a user.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID
+
+**Response:**
+```json
+[
+  {
+    "geofence_id": 1,
+    "user_id": 1,
+    "name": "Home",
+    "latitude": 37.7749,
+    "longitude": -122.4194,
+    "radius": 500.0,
+    "enabled": true,
+    "created_at": "2025-08-01T10:00:00Z"
+  },
+  {
+    "geofence_id": 2,
+    "user_id": 1,
+    "name": "Work",
+    "latitude": 37.7850,
+    "longitude": -122.4095,
+    "radius": 300.0,
+    "enabled": true,
+    "created_at": "2025-08-02T12:00:00Z"
+  }
+]
+```
+
+**Status Codes:**
+- `200`: Geofences retrieved successfully
+- `401`: Invalid user access token
+
+---
+
+#### POST `/v1/geofences`
+Create a new geofence.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID
+
+**Request Body:**
+```json
+{
+  "name": "Home",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "radius": 500.0,
+  "enabled": true
+}
+```
+
+**Validation:**
+- Latitude must be between -90 and 90
+- Longitude must be between -180 and 180
+- Radius must be greater than 0 (in meters)
+
+**Response:**
+```json
+{
+  "geofence_id": 1,
+  "user_id": 1,
+  "name": "Home",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "radius": 500.0,
+  "enabled": true,
+  "created_at": "2025-08-07T14:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200`: Geofence created successfully
+- `401`: Invalid user access token
+- `400`: Invalid geofence data
+
+---
+
+#### PUT `/v1/geofences/{geofence_id}`
+Update an existing geofence.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID
+
+**Request Body:**
+```json
+{
+  "name": "Home Sweet Home",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "radius": 600.0,
+  "enabled": false
+}
+```
+
+**Notes:**
+- All fields are optional. Only provided fields will be updated.
+
+**Response:**
+```json
+{
+  "geofence_id": 1,
+  "user_id": 1,
+  "name": "Home Sweet Home",
+  "latitude": 37.7749,
+  "longitude": -122.4194,
+  "radius": 600.0,
+  "enabled": false,
+  "created_at": "2025-08-07T14:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200`: Geofence updated successfully
+- `401`: Invalid user access token
+- `404`: Geofence not found or not owned by user
+- `400`: Invalid geofence data
+
+---
+
+#### DELETE `/v1/geofences/{geofence_id}`
+Delete a geofence.
+
+**Headers:**
+- `Access-Token`: User access token
+
+**Query Parameters:**
+- `user_id` (required): User ID
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Geofence deleted successfully"
+}
+```
+
+**Status Codes:**
+- `200`: Geofence deleted successfully
+- `401`: Invalid user access token
+- `404`: Geofence not found or not owned by user
+
+---
+
+
 
 ## Error Handling
 
