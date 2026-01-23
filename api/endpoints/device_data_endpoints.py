@@ -25,7 +25,18 @@ class DeviceData(BaseModel):
     heading: float | None = None
     trip_active: bool | None = None
 
+    @classmethod
+    def __get_validators__(cls):
+        yield from super().__get_validators__()
+        yield cls.validate_heading
 
+    @staticmethod
+    def validate_heading(values):
+        heading = values.get('heading')
+        if heading is not None:
+            if not (0 <= heading <= 360):
+                raise ValueError("heading must be between 0 and 360 degrees")
+        return values
 class DeviceDataResponse(BaseModel):
     success: bool
     message: str
