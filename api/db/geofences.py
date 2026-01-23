@@ -129,10 +129,9 @@ def update_geofence(
     
     with db_conn:
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(
-                f"UPDATE geofences SET {', '.join(updates)} WHERE geofence_id = %s AND user_id = %s RETURNING *",
-                values,
-            )
+            set_clause = ', '.join(updates)
+            query = f"UPDATE geofences SET {set_clause} WHERE geofence_id = %s AND user_id = %s RETURNING *"
+            cursor.execute(query, values)
             geofence = cursor.fetchone()
             return Geofence(**geofence) if geofence else None
 

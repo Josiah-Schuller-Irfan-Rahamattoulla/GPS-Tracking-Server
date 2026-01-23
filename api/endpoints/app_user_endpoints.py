@@ -5,13 +5,12 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, get_device, delete_all_devices
+from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, delete_all_devices
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
 from db.geofences import (
     get_geofences_by_user_id,
-    get_geofence,
     create_geofence,
     update_geofence,
     delete_geofence,
@@ -329,7 +328,8 @@ async def get_device_trip_status(
         )
     
     # Get latest GPS data with trip_active
-    end_time = datetime.utcnow()
+    from datetime import timezone
+    end_time = datetime.now(timezone.utc).replace(tzinfo=None)
     start_time = end_time - timedelta(hours=1)  # Last hour
     
     gps_records = get_gps_data(
@@ -383,6 +383,25 @@ class GeofenceCreate(BaseModel):
     longitude: float
     radius: float = 100.0
     enabled: bool = True
+    
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate_coordinates
+    
+    @staticmethod
+    def validate_coordinates(v):
+        if isinstance(v, dict):
+            lat = v.get('latitude')
+            lon = v.get('longitude')
+            rad = v.get('radius', 100.0)
+            
+            if lat is not None and not (-90 <= lat <= 90):
+                raise ValueError('latitude must be between -90 and 90')
+            if lon is not None and not (-180 <= lon <= 180):
+                raise ValueError('longitude must be between -180 and 180')
+            if rad is not None and rad <= 0:
+                raise ValueError('radius must be greater than 0')
+        return v
 
 
 class GeofenceUpdate(BaseModel):
@@ -532,7 +551,7 @@ async def delete_all_user_devices(
     Delete all devices associated with a user.
     This will delete:
     - All GPS data for those devices
-    - All geofences for those devices
+    - All geofences for this user
     - All user-device links
     - The devices themselves
     

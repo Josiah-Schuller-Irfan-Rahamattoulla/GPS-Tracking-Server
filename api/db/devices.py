@@ -164,15 +164,11 @@ def delete_all_devices(db_conn: PGConnection, user_id: int) -> int:
                 (device_ids,)
             )
             
-            # Delete geofences for these devices (if geofences table exists and has device_id)
-            try:
-                cursor.execute(
-                    "DELETE FROM geofences WHERE device_id = ANY(%s)",
-                    (device_ids,)
-                )
-            except Exception:
-                # Geofences table might not have device_id or might not exist
-                pass
+            # Delete geofences for this user (geofences are user-scoped, not device-scoped)
+            cursor.execute(
+                "DELETE FROM geofences WHERE user_id = %s",
+                (user_id,)
+            )
             
             # Delete user-device links
             cursor.execute(
@@ -259,24 +255,20 @@ def update_device_controls(
             updates.append("control_version = COALESCE(control_version, 0) + 1")
             updates.append("controls_updated_at = CURRENT_TIMESTAMP")
             
-            # Build WHERE clause
-            where_parts = ["d.device_id = ud.device_id", "d.device_id = %s", "ud.user_id = %s"]
-            values.extend([device_id, user_id])
+            # Build WHERE clause and SET clause safely
+            set_clause = ', '.join(updates)
+            where_clause = ' AND '.join(["d.device_id = ud.device_id", "d.device_id = %s", "ud.user_id = %s"])
             
-            # Add version check to WHERE clause if provided
             if expected_version is not None:
-                where_parts.append("d.control_version = %s")
+                where_clause += " AND d.control_version = %s"
                 values.append(expected_version)
             
-            cursor.execute(
-                f"""
-                UPDATE devices d
-                SET {', '.join(updates)}
-                FROM users_devices ud
-                WHERE {' AND '.join(where_parts)}
-                RETURNING d.*
-                """,
-                values,
+            query = (
+                f"UPDATE devices d SET {set_clause} "
+                f"FROM users_devices ud WHERE {where_clause} RETURNING d.*"
             )
+            values.extend([device_id, user_id])
+            
+            cursor.execute(query, values)
             updated = cursor.fetchone()
             return Device(**updated) if updated else None

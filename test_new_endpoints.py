@@ -10,7 +10,7 @@ Usage:
 import argparse
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def test_endpoint(method, url, headers=None, data=None, description=""):
     """Test an endpoint and print results."""
@@ -115,7 +115,7 @@ def main():
         "device_id": device_id,
         "latitude": -37.8136,
         "longitude": 144.9631,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         "speed": 65.5,
         "heading": 180.0,
         "trip_active": True

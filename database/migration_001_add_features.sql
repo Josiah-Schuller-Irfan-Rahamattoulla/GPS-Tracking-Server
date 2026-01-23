@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS geofences (
     name VARCHAR(100) NOT NULL,
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
-    radius REAL NOT NULL DEFAULT 100, -- meters
+    radius REAL NOT NULL DEFAULT 100.0, -- meters
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE

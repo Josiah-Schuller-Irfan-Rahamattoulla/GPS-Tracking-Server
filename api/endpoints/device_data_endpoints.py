@@ -24,6 +24,22 @@ class DeviceData(BaseModel):
     speed: float | None = None
     heading: float | None = None
     trip_active: bool | None = None
+    
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate_ranges
+    
+    @staticmethod
+    def validate_ranges(v):
+        if isinstance(v, dict):
+            speed = v.get('speed')
+            heading = v.get('heading')
+            
+            if speed is not None and speed < 0:
+                raise ValueError('speed must be >= 0')
+            if heading is not None and not (0 <= heading <= 360):
+                raise ValueError('heading must be between 0 and 360')
+        return v
 
 
 class DeviceDataResponse(BaseModel):
@@ -111,21 +127,13 @@ async def register_device_to_user(registration_data: UserDeviceRegistrationData)
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
-    try:
-        create_user_device_row(
-            db_conn=db_conn,
-            user_id=registration_data.user_id,
-            device_id=registration_data.device_id,
-        )
-        return {"success": True, "message": "Device registered to user successfully"}
-    except Exception as e:
-        # Log the error for debugging
-        import logging
-        logging.error(f"Failed to register device {registration_data.device_id} to user {registration_data.user_id}: {str(e)}")
-        # If it's a duplicate key error, that's okay - device is already linked
-        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            return {"success": True, "message": "Device already registered to user"}
-        raise
+    create_user_device_row(
+        db_conn=db_conn,
+        user_id=registration_data.user_id,
+        device_id=registration_data.device_id,
+    )
+
+    return {"success": True, "message": "Device registered to user successfully"}
 
 
 @router.get("/getDeviceControls")
