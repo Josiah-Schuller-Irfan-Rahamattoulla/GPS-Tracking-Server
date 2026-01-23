@@ -1,12 +1,15 @@
 import os
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, Security, status
+from fastapi.security import APIKeyHeader
 from psycopg2 import connect
 from pydantic import BaseModel
 
 from db.devices import create_device, create_user_device_row, get_device
 from db.gps_data import add_gps_data
+
+access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
 router = APIRouter()
 
@@ -123,3 +126,45 @@ async def register_device_to_user(registration_data: UserDeviceRegistrationData)
         if "duplicate" in str(e).lower() or "unique" in str(e).lower():
             return {"success": True, "message": "Device already registered to user"}
         raise
+
+
+@router.get("/getDeviceControls")
+async def get_device_controls(
+    device_id: int = Query(..., description="Device ID"),
+    access_token: str = Security(access_token_header)
+):
+    """
+    Endpoint for devices to get their control settings.
+    Authenticated using device access token in header.
+    """
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token is required"
+        )
+    
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Verify device and token
+    device = get_device(db_conn=db_conn, device_id=device_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found"
+        )
+    
+    if device.access_token != access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token"
+        )
+    
+    return {
+        "device_id": device.device_id,
+        "control_1": device.control_1,
+        "control_2": device.control_2,
+        "control_3": device.control_3,
+        "control_4": device.control_4,
+        "control_version": device.control_version,
+        "controls_updated_at": device.controls_updated_at.isoformat() if device.controls_updated_at else None
+    }

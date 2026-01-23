@@ -1,0 +1,35 @@
+{
+    // Point CMake to the firmware directory in the sibling GPS-Tracking-PCB project
+    "cmake.sourceDirectory": "${workspaceFolder}/../GPS-Tracking-PCB/nrf9151-firmware",
+    
+    // CMake configuration arguments - set BOARD and SDK path for Zephyr/NCS builds
+    // Note: Do not set CMAKE_C_COMPILER or CMAKE_CXX_COMPILER - let Zephyr configure the toolchain
+    "cmake.configureArgs": [
+        "-DBOARD=nrf9151_tracker",
+        "-DZEPHYR_BASE=C:/ncs/v3.1.1/zephyr"
+    ],
+    
+    // Prevent CMake from auto-detecting compilers - Zephyr will configure the toolchain
+    "cmake.preferredGenerators": [
+        "Unix Makefiles"
+    ],
+    
+    // nRF Connect extension settings
+    // NOTE: The nRF Connect extension works best when the workspace root is GPS-Tracking-PCB
+    // If you get "SDK not found" errors, try opening GPS-Tracking-PCB as the workspace instead
+    "nrf-connect.toolchain": {
+        "version": "2.1.0"
+    },
+    "nrf-connect.sdk": {
+        "version": "3.1.1"
+    },
+    
+    // West workspace configuration - SDK path must point to the SDK root directory
+    "nrf-connect.sdk.path": "C:/ncs/v3.1.1",
+    // West workspace root - must point to the SDK directory where west is initialized
+    "nrf-connect.west.path": "C:/ncs/v3.1.1",
+    
+    // Alternative SDK path format (some versions of the extension use this)
+    "nrf-connect.toolchain.path": "C:/ncs/v3.1.1"
+}
+
