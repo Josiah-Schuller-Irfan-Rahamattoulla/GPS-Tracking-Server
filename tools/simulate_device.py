@@ -27,7 +27,7 @@ from typing import Iterable, Tuple
 
 import requests
 
-DEFAULT_BASE_URL = "http://172.16.20.18:8000"
+DEFAULT_BASE_URL = "https://gpstracking.josiahschuller.au"
 
 
 def ts() -> str:
@@ -117,28 +117,35 @@ def path_generator(lat: float, lon: float, step_m: float, count: int) -> Iterabl
 def main() -> None:
     parser = argparse.ArgumentParser(description="Simulate a GPS device lifecycle and movement")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="API base URL")
-    parser.add_argument("--user-id", type=int, required=True, help="User ID to link the device to")
-    parser.add_argument("--user-token", required=True, help="User access token for control updates")
-    parser.add_argument("--device-id", type=int, help="Device ID (defaults to random)")
-    parser.add_argument("--device-token", help="Device access token (defaults to generated)")
-    parser.add_argument("--sms-number", help="Unique SMS number for registration")
-    parser.add_argument("--start-lat", type=float, default=-37.8136, help="Starting latitude")
-    parser.add_argument("--start-lon", type=float, default=144.9631, help="Starting longitude")
+    parser.add_argument("--user-id", type=int, help="User ID to link the device to (auto-generated if omitted)")
+    parser.add_argument("--user-token", help="User access token for control updates (auto-generated if omitted)")
+    parser.add_argument("--device-id", type=int, help="Device ID (auto-generated if omitted)")
+    parser.add_argument("--device-token", help="Device access token (auto-generated if omitted)")
+    parser.add_argument("--sms-number", help="Unique SMS number (auto-generated if omitted)")
+    parser.add_argument("--start-lat", type=float, help="Starting latitude (random if omitted)")
+    parser.add_argument("--start-lon", type=float, help="Starting longitude (random if omitted)")
     parser.add_argument("--points", type=int, default=20, help="Number of GPS points to send")
     parser.add_argument("--interval", type=float, default=2.0, help="Seconds between points")
     parser.add_argument("--step-m", type=float, default=15.0, help="Approx meters moved per step")
     parser.add_argument("--toggle-kill", action="store_true", help="Toggle kill switch on halfway, off at end")
     args = parser.parse_args()
 
+    # Auto-generate all fields with random values if not provided
     device_id = args.device_id or random.randint(100000, 999999)
     device_token = args.device_token or f"test_device_token_{random.randint(1_000_000, 9_999_999)}"
     sms_number = args.sms_number or f"+61{random.randint(4_000_000_000, 4_999_999_999)}"
+    user_id = args.user_id or random.randint(1, 10000)
+    user_token = args.user_token or f"test_user_token_{random.randint(1_000_000, 9_999_999)}"
+    start_lat = args.start_lat if args.start_lat is not None else random.uniform(-37.85, -37.80)  # Melbourne area
+    start_lon = args.start_lon if args.start_lon is not None else random.uniform(144.95, 145.00)  # Melbourne area
 
     print(f"Base URL: {args.base_url}")
     print(f"Device ID: {device_id}")
     print(f"Device Token: {device_token}")
     print(f"SMS Number: {sms_number}")
-    print(f"User ID: {args.user_id}")
+    print(f"User ID: {user_id}")
+    print(f"User Token: {user_token}")
+    print(f"Starting Location: {start_lat:.6f}, {start_lon:.6f}")
     print("")
 
     try:
@@ -151,7 +158,7 @@ def main() -> None:
 
     try:
         print("[2/4] Linking device to user...")
-        link = link_device_to_user(args.base_url, device_id, device_token, args.user_id)
+        link = link_device_to_user(args.base_url, device_id, device_token, user_id)
         print("    OK:", json.dumps(link))
     except Exception as e:
         print("    Failed to link device to user:", e)
@@ -160,14 +167,14 @@ def main() -> None:
     if args.toggle_kill:
         try:
             print("[3/4] Enabling kill switch (control_1=True)...")
-            res = update_controls(args.base_url, args.user_token, args.user_id, device_id, True)
+            res = update_controls(args.base_url, user_token, user_id, device_id, True)
             print("    OK:", json.dumps(res))
         except Exception as e:
             print("    Failed to set kill switch:", e)
             return
 
     print("[4/4] Streaming GPS points...")
-    for idx, (lat, lon) in enumerate(path_generator(args.start_lat, args.start_lon, args.step_m, args.points), start=1):
+    for idx, (lat, lon) in enumerate(path_generator(start_lat, start_lon, args.step_m, args.points), start=1):
         try:
             res = send_gps(args.base_url, device_id, device_token, lat, lon)
             print(f"    #{idx:02d} {lat:.6f}, {lon:.6f} -> {res}")
@@ -180,7 +187,7 @@ def main() -> None:
         if args.toggle_kill and idx == args.points // 2:
             try:
                 print("    Toggling kill switch OFF (control_1=False)...")
-                res = update_controls(args.base_url, args.user_token, args.user_id, device_id, False)
+                res = update_controls(args.base_url, user_token, user_id, device_id, False)
                 print("    OK:", json.dumps(res))
             except Exception as e:
                 print("    Failed to clear kill switch:", e)
