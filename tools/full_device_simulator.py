@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import Tuple, Optional
 
 # Configuration
-BASE_URL = "https://gpstracking.josiahschuller.au"
+BASE_URL = "http://localhost:8000"
 DEVICE_ID = random.randint(100000, 999999)
 DEVICE_TOKEN = f"sim_device_{DEVICE_ID}_{int(time.time())}"
 SMS_NUMBER = f"+614{random.randint(10000000, 99999999)}"
@@ -57,17 +57,17 @@ def print_step(step: int, text: str):
 
 def print_success(text: str):
     """Print success message"""
-    print(f"✓ {text}")
+    print(f"[OK] {text}")
 
 
 def print_error(text: str):
     """Print error message"""
-    print(f"✗ ERROR: {text}")
+    print(f"[FAIL] {text}")
 
 
 def print_info(text: str):
     """Print info message"""
-    print(f"ℹ {text}")
+    print(f"[*] {text}")
 
 
 def register_device() -> bool:
@@ -85,7 +85,8 @@ def register_device() -> bool:
                 "access_token": DEVICE_TOKEN,
                 "sms_number": SMS_NUMBER
             },
-            timeout=10
+            timeout=10,
+            verify=False
         )
         
         if response.ok:
@@ -115,7 +116,8 @@ def link_to_user(user_id: int) -> bool:
                 "device_id": DEVICE_ID,
                 "user_id": user_id
             },
-            timeout=10
+            timeout=10,
+            verify=False
         )
         
         if response.ok:
@@ -159,7 +161,8 @@ def send_gps_data(
             f"{BASE_URL}/v1/sendGPSData",
             headers={"Access-Token": DEVICE_TOKEN},
             json=payload,
-            timeout=10
+            timeout=10,
+            verify=False
         )
         
         if response.ok:
@@ -179,7 +182,8 @@ def check_device_controls() -> dict:
         response = requests.get(
             f"{BASE_URL}/v1/device/{DEVICE_ID}/controls",
             headers={"Access-Token": DEVICE_TOKEN},
-            timeout=10
+            timeout=10,
+            verify=False
         )
         
         if response.ok:
@@ -366,7 +370,8 @@ def test_kill_switch(user_id: int):
                 "control_3": False,
                 "control_4": False
             },
-            timeout=10
+            timeout=10,
+            verify=False
         )
         
         if response.ok:
@@ -395,7 +400,8 @@ def test_kill_switch(user_id: int):
                     "control_3": False,
                     "control_4": False
                 },
-                timeout=10
+                timeout=10,
+                verify=False
             )
             
             if response.ok:
@@ -454,15 +460,10 @@ def main():
     
     time.sleep(2)
     
-    # Step 2: Link to user
+    # Step 2: Link to user (default to user ID 1 - irfanrahamattoulla@hotmail.com)
+    user_id = 1
     print("\n" + "=" * 60)
-    user_id_input = input("Enter User ID to link this device to: ").strip()
-    
-    try:
-        user_id = int(user_id_input)
-    except ValueError:
-        print_error("Invalid user ID. Exiting.")
-        return
+    print(f"Linking device to User ID {user_id} (irfanrahamattoulla@hotmail.com)")
     
     if not link_to_user(user_id):
         print_error("Failed to link device. Exiting.")
@@ -480,7 +481,7 @@ def main():
     # Step 4: Run simulations
     print("\n" + "=" * 60)
     print("SELECT SIMULATION MODE:")
-    print("1. Full automated test (stationary → walking → driving → trip → kill switch)")
+    print("1. Full automated test (stationary -> walking -> driving -> trip -> kill switch)")
     print("2. Stationary only")
     print("3. Walking only")
     print("4. Driving only")
