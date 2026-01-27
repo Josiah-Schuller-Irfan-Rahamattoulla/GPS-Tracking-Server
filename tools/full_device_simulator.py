@@ -10,6 +10,7 @@ Simulates a complete GPS device lifecycle:
 - Geofence testing
 """
 
+import os
 import requests
 import time
 import random
@@ -22,6 +23,9 @@ BASE_URL = "http://localhost:8000"
 DEVICE_ID = random.randint(100000, 999999)
 DEVICE_TOKEN = f"sim_device_{DEVICE_ID}_{int(time.time())}"
 SMS_NUMBER = f"+614{random.randint(10000000, 99999999)}"
+USER_EMAIL = os.getenv("USER_EMAIL", "irfanrahamattoulla@hotmail.com")
+USER_PASSWORD = os.getenv("USER_PASSWORD", "pass")
+USER_ACCESS_TOKEN = os.getenv("USER_ACCESS_TOKEN")  # Optional; if not set we will login automatically
 
 # Starting position (Melbourne, Australia)
 START_LAT = -37.8136
@@ -68,6 +72,36 @@ def print_error(text: str):
 def print_info(text: str):
     """Print info message"""
     print(f"[*] {text}")
+
+
+def ensure_user_access_token() -> Optional[str]:
+    """Return a user access token, logging in if needed."""
+    global USER_ACCESS_TOKEN
+    if USER_ACCESS_TOKEN:
+        return USER_ACCESS_TOKEN
+    try:
+        print_info("Logging in to obtain user access token...")
+        resp = requests.post(
+            f"{BASE_URL}/v1/login",
+            json={"email_address": USER_EMAIL, "password": USER_PASSWORD},
+            timeout=10,
+            verify=False,
+        )
+        if not resp.ok:
+            print_error(f"Login failed (HTTP {resp.status_code})")
+            print_error(f"Response: {resp.text}")
+            return None
+        data = resp.json()
+        token = data.get("access_token")
+        if not token:
+            print_error("Login response missing access_token")
+            return None
+        USER_ACCESS_TOKEN = token
+        print_success("Obtained user access token via login")
+        return token
+    except Exception as e:
+        print_error(f"Login error: {e}")
+        return None
 
 
 def register_device() -> bool:
@@ -353,6 +387,10 @@ def test_kill_switch(user_id: int):
     """Test kill switch functionality"""
     print_banner("TESTING KILL SWITCH")
     global kill_switch_active
+    token = ensure_user_access_token()
+    if not token:
+        print_error("Cannot proceed without user access token.")
+        return
     
     print_step(6, "Activating Kill Switch")
     print_info("Sending kill switch command via API...")
@@ -360,11 +398,10 @@ def test_kill_switch(user_id: int):
     try:
         # Activate kill switch
         response = requests.put(
-            f"{BASE_URL}/v1/user/{user_id}/device/{DEVICE_ID}/controls",
-            headers={"Access-Token": DEVICE_TOKEN},
+            f"{BASE_URL}/v1/devices/{DEVICE_ID}/controls",
+            params={"user_id": user_id},
+            headers={"Access-Token": token},  # user token required
             json={
-                "user_id": user_id,
-                "device_id": DEVICE_ID,
                 "control_1": True,  # Kill switch
                 "control_2": False,
                 "control_3": False,
@@ -390,11 +427,10 @@ def test_kill_switch(user_id: int):
             # Deactivate kill switch
             print_step(7, "Deactivating Kill Switch")
             response = requests.put(
-                f"{BASE_URL}/v1/user/{user_id}/device/{DEVICE_ID}/controls",
-                headers={"Access-Token": DEVICE_TOKEN},
+                f"{BASE_URL}/v1/devices/{DEVICE_ID}/controls",
+                params={"user_id": user_id},
+                headers={"Access-Token": token},  # user token required
                 json={
-                    "user_id": user_id,
-                    "device_id": DEVICE_ID,
                     "control_1": False,  # Kill switch off
                     "control_2": False,
                     "control_3": False,
@@ -460,10 +496,10 @@ def main():
     
     time.sleep(2)
     
-    # Step 2: Link to user (default to user ID 1 - irfanrahamattoulla@hotmail.com)
-    user_id = 1
+    # Step 2: Link to user (default to user ID 2 - irfanrahamattoulla)
+    user_id = 2
     print("\n" + "=" * 60)
-    print(f"Linking device to User ID {user_id} (irfanrahamattoulla@hotmail.com)")
+    print(f"Linking device to User ID {user_id} (irfanrahamattoulla)")
     
     if not link_to_user(user_id):
         print_error("Failed to link device. Exiting.")
