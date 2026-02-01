@@ -24,7 +24,7 @@ CREATE TABLE users (
 CREATE TABLE devices (
     device_id SERIAL PRIMARY KEY,
     access_token VARCHAR(255) NOT NULL,
-    sms_number VARCHAR(20) NOT NULL UNIQUE,
+    sms_number VARCHAR(20) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     control_1 BOOLEAN DEFAULT NULL,
     control_2 BOOLEAN DEFAULT NULL,
@@ -71,7 +71,7 @@ COMMENT ON COLUMN users.created_at IS 'Timestamp when user account was created';
 
 COMMENT ON TABLE devices IS 'GPS tracking devices';
 COMMENT ON COLUMN devices.device_id IS 'Primary key - unique device identifier';
-COMMENT ON COLUMN devices.sms_number IS 'SMS number for device communication (must be unique)';
+COMMENT ON COLUMN devices.sms_number IS 'SMS/phone number for alerts; multiple devices may share the same number';
 COMMENT ON COLUMN devices.created_at IS 'Timestamp when device was registered';
 COMMENT ON COLUMN devices.control_1 IS 'Device control setting 1';
 COMMENT ON COLUMN devices.control_2 IS 'Device control setting 2';

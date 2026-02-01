@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, delete_all_devices
+from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, delete_all_devices, create_user_device_row, get_device
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
@@ -152,6 +152,33 @@ class AppDeviceResponse(BaseModel):
     control_4: bool | None
     control_version: int | None = None
     controls_updated_at: datetime | None = None
+
+
+class LinkDeviceRequest(BaseModel):
+    device_id: int
+
+
+@router.post("/registerDeviceToUser")
+async def register_device_to_user(
+    request: LinkDeviceRequest,
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Endpoint to link an existing device to a user. Requires user auth.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    device = get_device(db_conn=db_conn, device_id=request.device_id)
+    if device is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+    create_user_device_row(
+        db_conn=db_conn,
+        user_id=user_id,
+        device_id=request.device_id,
+    )
+    return {"success": True, "message": "Device registered to user successfully"}
 
 
 @router.get("/devices", response_model=list[AppDeviceResponse])

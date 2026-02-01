@@ -1,12 +1,13 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Security, status
 from fastapi.security import APIKeyHeader
 from psycopg2 import connect
+from psycopg2 import IntegrityError
 from pydantic import BaseModel
 
-from db.devices import create_device, create_user_device_row, get_device
+from db.devices import create_device, get_device
 from db.gps_data import add_gps_data
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
@@ -63,13 +64,18 @@ async def send_gps_data(device_data: DeviceData):
     """
     Endpoint to receive GPS data from a device.
     Supports speed, heading, and trip_active fields from hardware/mobile app.
+    If device timestamp is stale (before 2020), use server time so web UI finds it.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+
+    ts = device_data.timestamp
+    if ts.year < 2020:
+        ts = datetime.now(timezone.utc)
 
     add_gps_data(
         db_conn=db_conn,
         device_id=device_data.device_id,
-        timestamp=device_data.timestamp,
+        timestamp=ts,
         latitude=device_data.latitude,
         longitude=device_data.longitude,
         speed=device_data.speed,
@@ -111,40 +117,36 @@ async def register_device(device_data: DeviceRegistrationData):
             detail="Device with this ID already exists",
         )
 
-    create_device(
-        db_conn=db_conn,
-        device_id=device_data.device_id,
-        access_token=device_data.access_token,
-        sms_number=device_data.sms_number,
-        name=device_data.name,
-        control_1=device_data.control_1,
-        control_2=device_data.control_2,
-        control_3=device_data.control_3,
-        control_4=device_data.control_4,
-    )
+    try:
+        create_device(
+            db_conn=db_conn,
+            device_id=device_data.device_id,
+            access_token=device_data.access_token,
+            sms_number=device_data.sms_number,
+            name=device_data.name,
+            control_1=device_data.control_1,
+            control_2=device_data.control_2,
+            control_3=device_data.control_3,
+            control_4=device_data.control_4,
+        )
+    except IntegrityError as e:
+        db_conn.rollback()
+        if "device_id" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Device with this ID already exists",
+            )
+        if "sms_number" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="SMS number already registered to another device",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device or SMS number already exists",
+        )
 
     return {"success": True, "message": "Device registered successfully"}
-
-
-class UserDeviceRegistrationData(BaseModel):
-    device_id: int
-    user_id: int
-
-
-@router.post("/registerDeviceToUser")
-async def register_device_to_user(registration_data: UserDeviceRegistrationData):
-    """
-    Endpoint to register a device to a user.
-    """
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-
-    create_user_device_row(
-        db_conn=db_conn,
-        user_id=registration_data.user_id,
-        device_id=registration_data.device_id,
-    )
-
-    return {"success": True, "message": "Device registered to user successfully"}
 
 
 @router.get("/getDeviceControls")
