@@ -50,3 +50,5 @@ tzdata==2025.2
     # via pandas
 uvicorn==0.35.0
     # via gps-tracking-api (pyproject.toml)
+httpx==0.28.1
+    # via gps-tracking-api (A-GNSS proxy)

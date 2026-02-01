@@ -3,9 +3,11 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Security, status
 from fastapi.security import APIKeyHeader
+from fastapi.responses import Response
 from psycopg2 import connect
 from psycopg2 import IntegrityError
 from pydantic import BaseModel
+import httpx
 
 from db.devices import create_device, get_device
 from db.gps_data import add_gps_data
@@ -189,3 +191,74 @@ async def get_device_controls(
         "control_version": device.control_version,
         "controls_updated_at": device.controls_updated_at.isoformat() if device.controls_updated_at else None
     }
+
+
+@router.get("/agnss")
+async def get_agnss_data(
+    device_id: int = Query(..., description="Device ID"),
+    access_token: str = Security(access_token_header)
+):
+    """
+    A-GNSS proxy endpoint: fetches assistance data from nRF Cloud and returns binary blob.
+    Device calls this when it needs A-GNSS (ephemeris, almanac, time, location).
+    """
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token is required"
+        )
+    
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Verify device and token
+    device = get_device(db_conn=db_conn, device_id=device_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found"
+        )
+    
+    if device.access_token != access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token"
+        )
+    
+    # Fetch A-GNSS data from nRF Cloud
+    nrf_cloud_api_key = os.getenv("NRF_CLOUD_API_KEY")
+    if not nrf_cloud_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="nRF Cloud API key not configured"
+        )
+    
+    # Use device_id as deviceIdentifier (or could use IMEI if stored)
+    # nRF Cloud accepts various identifiers; device_id should work for caching
+    device_identifier = f"nrf-{device_id}"
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                "https://api.nrfcloud.com/v1/location/agps",
+                params={"deviceIdentifier": device_identifier},
+                headers={"Authorization": f"Bearer {nrf_cloud_api_key}"}
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"nRF Cloud returned status {response.status_code}: {response.text}"
+                )
+            
+            # Return binary A-GNSS data to device
+            return Response(
+                content=response.content,
+                media_type="application/octet-stream",
+                headers={"Content-Length": str(len(response.content))}
+            )
+    
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch A-GNSS from nRF Cloud: {str(e)}"
+        )
