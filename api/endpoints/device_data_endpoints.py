@@ -211,11 +211,14 @@ async def get_device_controls(
 @router.get("/agnss")
 async def get_agnss_data(
     device_id: int = Query(..., description="Device ID"),
+    lat: float | None = Query(None, ge=-90, le=90, description="Approximate latitude for tailored A-GNSS"),
+    lon: float | None = Query(None, ge=-180, le=180, description="Approximate longitude for tailored A-GNSS"),
     access_token: str = Security(access_token_header)
 ):
     """
     A-GNSS proxy endpoint: fetches assistance data from nRF Cloud and returns binary blob.
     Device calls this when it needs A-GNSS (ephemeris, almanac, time, location).
+    Optional lat/lon allow the server to request location-tailored assistance from nRF Cloud for faster TTFF.
     """
     if not access_token:
         raise HTTPException(
@@ -252,7 +255,11 @@ async def get_agnss_data(
     device_identifier = f"nrf-{device_id}"
     url = "https://api.nrfcloud.com/v1/location/agps"
     auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
-    params = {"deviceIdentifier": device_identifier}
+    params: dict[str, str | float] = {"deviceIdentifier": device_identifier}
+    if lat is not None and lon is not None:
+        params["latitude"] = lat
+        params["longitude"] = lon
+        logger.info("A-GNSS request with position hint: lat=%.6f lon=%.6f", lat, lon)
 
     def _parse_content_range(header_value: str | None) -> int | None:
         """Parse Content-Range (e.g. 'bytes 0-396/12345') and return total size, or None."""
