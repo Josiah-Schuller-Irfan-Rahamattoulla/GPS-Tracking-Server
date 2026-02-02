@@ -216,9 +216,9 @@ async def get_agnss_data(
     access_token: str = Security(access_token_header)
 ):
     """
-    A-GNSS proxy endpoint: fetches assistance data from nRF Cloud and returns binary blob.
-    Device calls this when it needs A-GNSS (ephemeris, almanac, time, location).
-    Optional lat/lon allow the server to request location-tailored assistance from nRF Cloud for faster TTFF.
+    A-GNSS proxy endpoint: fetches assistance data from nRF Cloud and returns the binary blob
+    byte-for-byte unchanged. The device expects the exact nRF Cloud A-GPS format; no decoding,
+    stripping, or transcoding is applied. Optional lat/lon request location-tailored data for faster TTFF.
     """
     if not access_token:
         raise HTTPException(
@@ -345,8 +345,9 @@ async def get_agnss_data(
                     if len(chunk) < 4096:  # assume last chunk if smaller than 4K
                         break
 
+            # Return nRF Cloud body byte-for-byte (no decode/transcode) so modem A-GNSS inject works
             full_content = b"".join(chunks)
-            logger.info("A-GNSS proxy returning %s bytes to device", len(full_content))
+            logger.info("A-GNSS proxy returning %s bytes to device (raw binary)", len(full_content))
 
             return Response(
                 content=full_content,
