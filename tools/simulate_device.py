@@ -27,7 +27,7 @@ from typing import Iterable, Tuple
 
 import requests
 
-DEFAULT_BASE_URL = "https://gpstracking.josiahschuller.au"
+DEFAULT_BASE_URL = "http://gpstracking.josiahschuller.au"
 
 
 def ts() -> str:
@@ -44,6 +44,7 @@ def register_device(base_url: str, device_id: int, device_token: str, sms_number
             "sms_number": sms_number,
         },
         timeout=10,
+        verify=False
     )
     resp.raise_for_status()
     return resp.json()
@@ -58,6 +59,7 @@ def link_device_to_user(base_url: str, device_id: int, device_token: str, user_i
         },
         json={"device_id": device_id, "user_id": user_id},
         timeout=10,
+        verify=False
     )
     resp.raise_for_status()
     return resp.json()
@@ -77,6 +79,7 @@ def send_gps(base_url: str, device_id: int, device_token: str, lat: float, lon: 
             "timestamp": ts(),
         },
         timeout=10,
+        verify=False
     )
     resp.raise_for_status()
     return resp.json()
@@ -97,6 +100,7 @@ def update_controls(base_url: str, user_token: str, user_id: int, device_id: int
             "control_4": None,
         },
         timeout=10,
+        verify=False
     )
     resp.raise_for_status()
     return resp.json()

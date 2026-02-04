@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Tuple, Optional
 
 # Configuration
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://gpstracking.josiahschuller.au"
 DEVICE_ID = random.randint(100000, 999999)
 DEVICE_TOKEN = f"sim_device_{DEVICE_ID}_{int(time.time())}"
 SMS_NUMBER = f"+614{random.randint(10000000, 99999999)}"
