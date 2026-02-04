@@ -1,3 +1,4 @@
+import os
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
@@ -6,7 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from endpoints import app_user_endpoints, device_data_endpoints
 from endpoints.authorisation import authorise_device, authorise_user
 
-load_dotenv()  # Load environment variables from .env file
+# Load .env from api/ dir then project root (so it works from any cwd)
+_api_dir = os.path.abspath(os.path.dirname(__file__))
+_root_dir = os.path.abspath(os.path.join(_api_dir, ".."))
+for _d in (_api_dir, _root_dir):
+    _env = os.path.join(_d, ".env")
+    if os.path.isfile(_env):
+        load_dotenv(_env)
 
 app = FastAPI(
     title="GPS Tracking Server API",

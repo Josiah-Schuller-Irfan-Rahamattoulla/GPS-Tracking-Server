@@ -15,13 +15,26 @@ async def authorise_device(
 ):
     """
     Authorises a device based on its device_id and access token.
+    For GET (e.g. /agnss) device_id comes from query; for POST from body.
     """
-    body = await request.json()
-    device_id = body.get("device_id")
+    if request.method == "GET":
+        device_id = request.query_params.get("device_id")
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        device_id = body.get("device_id") if isinstance(body, dict) else None
 
     if not device_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Device ID is required"
+        )
+    try:
+        device_id = int(device_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Device ID must be an integer"
         )
 
     if not access_token:

@@ -1,12 +1,18 @@
+import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Security, status
-from fastapi.security import APIKeyHeader
-from psycopg2 import connect
-from pydantic import BaseModel
 
-from db.devices import create_device, create_user_device_row, get_device
+logger = logging.getLogger(__name__)
+from fastapi.security import APIKeyHeader
+from fastapi.responses import Response
+from psycopg2 import connect
+from psycopg2 import IntegrityError, OperationalError
+from pydantic import BaseModel
+import httpx
+
+from db.devices import create_device, get_device
 from db.gps_data import add_gps_data
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
@@ -63,13 +69,18 @@ async def send_gps_data(device_data: DeviceData):
     """
     Endpoint to receive GPS data from a device.
     Supports speed, heading, and trip_active fields from hardware/mobile app.
+    If device timestamp is stale (before 2020), use server time so web UI finds it.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+
+    ts = device_data.timestamp
+    if ts.year < 2020:
+        ts = datetime.now(timezone.utc)
 
     add_gps_data(
         db_conn=db_conn,
         device_id=device_data.device_id,
-        timestamp=device_data.timestamp,
+        timestamp=ts,
         latitude=device_data.latitude,
         longitude=device_data.longitude,
         speed=device_data.speed,
@@ -99,7 +110,19 @@ async def register_device(device_data: DeviceRegistrationData):
     """
     Endpoint to register a new device.
     """
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    database_uri = os.getenv("DATABASE_URI")
+    if not database_uri:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DATABASE_URI not configured",
+        )
+    try:
+        db_conn = connect(dsn=database_uri)
+    except OperationalError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database unavailable: {str(e)}",
+        )
 
     # Check if device already exists
     existing_device = get_device(
@@ -111,40 +134,36 @@ async def register_device(device_data: DeviceRegistrationData):
             detail="Device with this ID already exists",
         )
 
-    create_device(
-        db_conn=db_conn,
-        device_id=device_data.device_id,
-        access_token=device_data.access_token,
-        sms_number=device_data.sms_number,
-        name=device_data.name,
-        control_1=device_data.control_1,
-        control_2=device_data.control_2,
-        control_3=device_data.control_3,
-        control_4=device_data.control_4,
-    )
+    try:
+        create_device(
+            db_conn=db_conn,
+            device_id=device_data.device_id,
+            access_token=device_data.access_token,
+            sms_number=device_data.sms_number,
+            name=device_data.name,
+            control_1=device_data.control_1,
+            control_2=device_data.control_2,
+            control_3=device_data.control_3,
+            control_4=device_data.control_4,
+        )
+    except IntegrityError as e:
+        db_conn.rollback()
+        if "device_id" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Device with this ID already exists",
+            )
+        if "sms_number" in str(e):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="SMS number already registered to another device",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Device or SMS number already exists",
+        )
 
     return {"success": True, "message": "Device registered successfully"}
-
-
-class UserDeviceRegistrationData(BaseModel):
-    device_id: int
-    user_id: int
-
-
-@router.post("/registerDeviceToUser")
-async def register_device_to_user(registration_data: UserDeviceRegistrationData):
-    """
-    Endpoint to register a device to a user.
-    """
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-
-    create_user_device_row(
-        db_conn=db_conn,
-        user_id=registration_data.user_id,
-        device_id=registration_data.device_id,
-    )
-
-    return {"success": True, "message": "Device registered to user successfully"}
 
 
 @router.get("/getDeviceControls")
@@ -187,3 +206,157 @@ async def get_device_controls(
         "control_version": device.control_version,
         "controls_updated_at": device.controls_updated_at.isoformat() if device.controls_updated_at else None
     }
+
+
+@router.get("/agnss")
+async def get_agnss_data(
+    device_id: int = Query(..., description="Device ID"),
+    lat: float | None = Query(None, ge=-90, le=90, description="Approximate latitude for tailored A-GNSS"),
+    lon: float | None = Query(None, ge=-180, le=180, description="Approximate longitude for tailored A-GNSS"),
+    access_token: str = Security(access_token_header)
+):
+    """
+    A-GNSS proxy endpoint: fetches assistance data from nRF Cloud and returns the binary blob
+    byte-for-byte unchanged. The device expects the exact nRF Cloud A-GPS format; no decoding,
+    stripping, or transcoding is applied. Optional lat/lon request location-tailored data for faster TTFF.
+    """
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token is required"
+        )
+    
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Verify device and token
+    device = get_device(db_conn=db_conn, device_id=device_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found"
+        )
+    
+    if device.access_token != access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token"
+        )
+    
+    # Fetch A-GNSS data from nRF Cloud (Bearer token = JWT from nRF Cloud; typically valid ~30 days)
+    nrf_cloud_api_key = os.getenv("NRF_CLOUD_API_KEY")
+    if not nrf_cloud_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="nRF Cloud API key not configured"
+        )
+    
+    # Use device_id as deviceIdentifier (or could use IMEI if stored)
+    # nRF Cloud accepts various identifiers; device_id should work for caching
+    device_identifier = f"nrf-{device_id}"
+    url = "https://api.nrfcloud.com/v1/location/agps"
+    auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
+    params: dict[str, str | float] = {"deviceIdentifier": device_identifier}
+    if lat is not None and lon is not None:
+        params["latitude"] = lat
+        params["longitude"] = lon
+        logger.info("A-GNSS request with position hint: lat=%.6f lon=%.6f", lat, lon)
+
+    def _parse_content_range(header_value: str | None) -> int | None:
+        """Parse Content-Range (e.g. 'bytes 0-396/12345') and return total size, or None."""
+        if not header_value:
+            return None
+        try:
+            # "bytes start-end/total" or "bytes start-end/*"
+            parts = header_value.strip().split()
+            if len(parts) != 2 or parts[0].lower() != "bytes":
+                return None
+            range_part = parts[1]
+            if "/" not in range_part:
+                return None
+            _, total_part = range_part.split("/", 1)
+            if total_part == "*":
+                return None
+            return int(total_part)
+        except (ValueError, IndexError):
+            return None
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # nRF Cloud A-GPS requires a Range header (422 otherwise). Request up to 16KB first.
+            response = await client.get(
+                url,
+                params=params,
+                headers={**auth_headers, "Range": "bytes=0-16383"},
+            )
+
+            if response.status_code not in (200, 206):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"nRF Cloud returned status {response.status_code}: {response.text}",
+                )
+
+            content_range = response.headers.get("Content-Range")
+            body_len = len(response.content)
+            logger.info(
+                "nRF Cloud A-GPS: status=%s Content-Range=%s body_len=%s",
+                response.status_code,
+                content_range,
+                body_len,
+            )
+
+            chunks = [response.content]
+            total_received = body_len
+            total_size = _parse_content_range(content_range)
+
+            # If 206 and Content-Range indicates more data, fetch remaining ranges.
+            while total_size is not None and total_received < total_size:
+                next_start = total_received
+                range_header = f"bytes={next_start}-"
+                next_response = await client.get(
+                    url,
+                    params=params,
+                    headers={**auth_headers, "Range": range_header},
+                )
+                if next_response.status_code not in (200, 206):
+                    break
+                chunk = next_response.content
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total_received += len(chunk)
+
+            # If we got 206 but no total (e.g. "bytes 0-396/*"), try fetching next range until empty.
+            if total_size is None and response.status_code == 206 and body_len > 0:
+                next_start = total_received
+                while True:
+                    next_response = await client.get(
+                        url,
+                        params=params,
+                        headers={**auth_headers, "Range": f"bytes={next_start}-"},
+                    )
+                    if next_response.status_code not in (200, 206):
+                        break
+                    chunk = next_response.content
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    total_received += len(chunk)
+                    next_start = total_received
+                    if len(chunk) < 4096:  # assume last chunk if smaller than 4K
+                        break
+
+            # Return nRF Cloud body byte-for-byte (no decode/transcode) so modem A-GNSS inject works
+            full_content = b"".join(chunks)
+            logger.info("A-GNSS proxy returning %s bytes to device (raw binary)", len(full_content))
+
+            return Response(
+                content=full_content,
+                media_type="application/octet-stream",
+                headers={"Content-Length": str(len(full_content))},
+            )
+
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Failed to fetch A-GNSS from nRF Cloud: {str(e)}",
+        )
