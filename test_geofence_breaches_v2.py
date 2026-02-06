@@ -2,11 +2,12 @@
 Test script for geofence breach detection functionality.
 Run this after starting Docker containers to verify the implementation.
 """
+import os
 import requests
 import time
 from datetime import datetime, timezone
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8000")
 
 # Test data
 TEST_USER = {
