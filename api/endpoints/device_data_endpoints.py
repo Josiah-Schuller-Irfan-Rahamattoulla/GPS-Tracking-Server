@@ -17,6 +17,9 @@ from db.gps_data import add_gps_data
 from db.geofences import get_geofences_by_user_id
 from db.geofence_breaches import check_geofence_breaches
 from db.models import GeofenceBreachEvent
+from db.users import get_user
+from notifications.geofence_breach_notifications import notify_geofence_breach_events
+from notifications.sms_notifications import notify_geofence_breach_via_sms
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
@@ -111,6 +114,30 @@ async def send_gps_data(device_data: DeviceData):
             longitude=device_data.longitude,
             geofences=geofences
         )
+        
+        if breach_events:
+            # Send notifications for this user
+            user = get_user(db_conn, user_id)
+            device = get_device(db_conn, device_data.device_id)
+            geofences_by_id = {g.geofence_id: g for g in geofences}
+            
+            # Send email notifications
+            notify_geofence_breach_events(
+                db_conn=db_conn,
+                events=breach_events,
+                user=user,
+                device=device,
+                geofences_by_id=geofences_by_id
+            )
+            
+            # Send SMS notifications
+            notify_geofence_breach_via_sms(
+                db_conn=db_conn,
+                events=breach_events,
+                user=user,
+                device=device,
+                geofences_by_id=geofences_by_id
+            )
         
         all_breach_events.extend(breach_events)
     
