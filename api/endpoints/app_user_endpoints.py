@@ -15,6 +15,8 @@ from db.geofences import (
     update_geofence,
     delete_geofence,
 )
+from db.models import GeofenceBreachEvent
+from psycopg2.extras import RealDictCursor
 
 router = APIRouter()  # Router for authenticated endpoints
 auth_router = APIRouter()  # Router for unauthenticated endpoints (login/signup)
@@ -562,6 +564,76 @@ async def delete_geofence_endpoint(
     return {"success": True, "message": "Geofence deleted successfully"}
 
 
+# ============== Geofence Breach Events Endpoints ==============
+
+class GeofenceBreachEventResponse(BaseModel):
+    event_id: int
+    device_id: int
+    geofence_id: int
+    geofence_name: str
+    device_name: str | None
+    event_type: str  # 'ENTERED' or 'EXITED'
+    latitude: float
+    longitude: float
+    event_time: datetime
+    notification_sent: bool
+
+
+@router.get("/geofence-breach-events", response_model=list[GeofenceBreachEventResponse])
+async def get_geofence_breach_events(
+    user_id: int = Query(..., description="User ID"),
+    device_id: int | None = Query(None, description="Filter by device ID"),
+    geofence_id: int | None = Query(None, description="Filter by geofence ID"),
+    event_type: str | None = Query(None, description="Filter by event type (ENTERED/EXITED)"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of events to return"),
+):
+    """
+    Get geofence breach events for the user's devices.
+    Returns events with device and geofence names for easy display.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    # Build query with optional filters
+    query = """
+        SELECT 
+            gbe.event_id,
+            gbe.device_id,
+            gbe.geofence_id,
+            gf.name as geofence_name,
+            d.name as device_name,
+            gbe.event_type,
+            gbe.latitude,
+            gbe.longitude,
+            gbe.event_time,
+            gbe.notification_sent
+        FROM geofence_breach_events gbe
+        JOIN geofences gf ON gbe.geofence_id = gf.geofence_id
+        JOIN devices d ON gbe.device_id = d.device_id
+        WHERE gbe.user_id = %s
+    """
+    params = [user_id]
+    
+    if device_id is not None:
+        query += " AND gbe.device_id = %s"
+        params.append(device_id)
+    
+    if geofence_id is not None:
+        query += " AND gbe.geofence_id = %s"
+        params.append(geofence_id)
+    
+    if event_type is not None:
+        query += " AND gbe.event_type = %s"
+        params.append(event_type.upper())
+    
+    query += " ORDER BY gbe.event_time DESC LIMIT %s"
+    params.append(limit)
+    
+    with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+        cursor.execute(query, params)
+        events = cursor.fetchall()
+        return [GeofenceBreachEventResponse(**event) for event in events]
+
+
 # ============== Device Management Endpoints ==============
 
 class DeleteAllDevicesResponse(BaseModel):
@@ -598,4 +670,69 @@ async def delete_all_user_devices(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete devices: {str(e)}",
+        )
+
+
+@router.get("/geofence-breach-events")
+async def get_geofence_breach_events(
+    user_id: int = Query(..., description="User ID"),
+    geofence_id: int = Query(None, description="Filter by geofence ID (optional)"),
+    device_id: int = Query(None, description="Filter by device ID (optional)"),
+    event_type: str = Query(None, description="Filter by event type: ENTERED or EXITED (optional)"),
+    limit: int = Query(50, description="Maximum number of events to return"),
+    offset: int = Query(0, description="Number of events to skip"),
+):
+    """
+    Endpoint to retrieve geofence breach events for a user.
+    Can filter by geofence_id, device_id, and event_type.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    
+    query = "SELECT * FROM geofence_breach_events WHERE user_id = %s"
+    params = [user_id]
+    
+    if geofence_id is not None:
+        query += " AND geofence_id = %s"
+        params.append(geofence_id)
+    
+    if device_id is not None:
+        query += " AND device_id = %s"
+        params.append(device_id)
+    
+    if event_type is not None:
+        if event_type not in ['ENTERED', 'EXITED']:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="event_type must be 'ENTERED' or 'EXITED'",
+            )
+        query += " AND event_type = %s"
+        params.append(event_type)
+    
+    query += " ORDER BY event_time DESC LIMIT %s OFFSET %s"
+    params.extend([limit, offset])
+    
+    try:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, params)
+            events = cursor.fetchall()
+        
+        # Convert to response format (rename id field if needed)
+        return [
+            {
+                "geofence_breach_event_id": event['event_id'],
+                "device_id": event['device_id'],
+                "geofence_id": event['geofence_id'],
+                "event_type": event['event_type'],
+                "latitude": event['latitude'],
+                "longitude": event['longitude'],
+                "event_time": event['event_time'],
+                "notification_sent": event['notification_sent'],
+                "notification_method": event['notification_method'],
+            }
+            for event in events
+        ]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve breach events: {str(e)}",
         )

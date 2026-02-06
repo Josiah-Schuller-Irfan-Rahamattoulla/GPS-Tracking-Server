@@ -44,6 +44,22 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
             return Device(**device) if device else None
 
 
+def get_user_ids_for_device(db_conn: PGConnection, device_id: int) -> list[int]:
+    """
+    Retrieve all user IDs associated with a device.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device
+    :return: List of user IDs who have access to this device
+    """
+    with db_conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT user_id FROM users_devices WHERE device_id = %s",
+            (device_id,),
+        )
+        return [row[0] for row in cursor.fetchall()]
+
+
 def create_device(
     db_conn: PGConnection,
     device_id: int,

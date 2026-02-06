@@ -12,8 +12,11 @@ from psycopg2 import IntegrityError, OperationalError
 from pydantic import BaseModel
 import httpx
 
-from db.devices import create_device, get_device
+from db.devices import create_device, get_device, get_user_ids_for_device
 from db.gps_data import add_gps_data
+from db.geofences import get_geofences_by_user_id
+from db.geofence_breaches import check_geofence_breaches
+from db.models import GeofenceBreachEvent
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
@@ -70,6 +73,8 @@ async def send_gps_data(device_data: DeviceData):
     Endpoint to receive GPS data from a device.
     Supports speed, heading, and trip_active fields from hardware/mobile app.
     If device timestamp is stale (before 2020), use server time so web UI finds it.
+    
+    Now includes server-side geofence breach detection for all users with access to the device.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
 
@@ -77,6 +82,7 @@ async def send_gps_data(device_data: DeviceData):
     if ts.year < 2020:
         ts = datetime.now(timezone.utc)
 
+    # Store GPS data
     add_gps_data(
         db_conn=db_conn,
         device_id=device_data.device_id,
@@ -87,6 +93,33 @@ async def send_gps_data(device_data: DeviceData):
         heading=device_data.heading,
         trip_active=device_data.trip_active,
     )
+
+    # Check geofence breaches for all users who have access to this device
+    user_ids = get_user_ids_for_device(db_conn, device_data.device_id)
+    all_breach_events: list[GeofenceBreachEvent] = []
+    
+    for user_id in user_ids:
+        # Get all active geofences for this user
+        geofences = get_geofences_by_user_id(db_conn, user_id)
+        
+        # Check for breaches
+        breach_events = check_geofence_breaches(
+            db_conn=db_conn,
+            device_id=device_data.device_id,
+            user_id=user_id,
+            latitude=device_data.latitude,
+            longitude=device_data.longitude,
+            geofences=geofences
+        )
+        
+        all_breach_events.extend(breach_events)
+    
+    # Log breach summary if any occurred
+    if all_breach_events:
+        logger.info(
+            f"GPS data triggered {len(all_breach_events)} geofence breach(es) "
+            f"for device {device_data.device_id}"
+        )
 
     return DeviceDataResponse(
         success=True,

@@ -56,3 +56,18 @@ class Geofence(BaseModel):
     radius: float
     enabled: bool
     created_at: datetime
+
+
+class GeofenceBreachEvent(BaseModel):
+    # Row of "geofence_breach_events" table
+    event_id: int
+    device_id: int
+    geofence_id: int
+    user_id: int
+    event_type: str  # 'ENTERED' or 'EXITED'
+    latitude: float
+    longitude: float
+    event_time: datetime
+    notification_sent: bool
+    notification_method: str | None = None
+    notification_sent_at: datetime | None = None

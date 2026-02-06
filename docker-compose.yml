@@ -13,6 +13,8 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/gps_tracking_database.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./database/migration_001_add_features.sql:/docker-entrypoint-initdb.d/02-migration.sql:ro
+      - ./database/migration_002_allow_multiple_devices_per_sms.sql:/docker-entrypoint-initdb.d/03-multi-device.sql:ro
+      - ./database/migration_003_add_geofence_breach_events.sql:/docker-entrypoint-initdb.d/04-geofence-breaches.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gpsuser} -d ${POSTGRES_DB:-gps_tracking}"]
       interval: 5s
