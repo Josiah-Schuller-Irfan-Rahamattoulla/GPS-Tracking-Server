@@ -30,7 +30,7 @@ services:
     container_name: gps-tracking-api
     environment:
       DATABASE_URI: postgresql://${POSTGRES_USER:-gpsuser}:${POSTGRES_PASSWORD:-gpspassword}@db:5432/${POSTGRES_DB:-gps_tracking}
-      SUPL_DEMO: "1"  # Enable SUPL demo mode for testing
+      NRF_CLOUD_API_KEY: ${NRF_CLOUD_API_KEY}
     ports:
       - "8000:8000"
     depends_on:
