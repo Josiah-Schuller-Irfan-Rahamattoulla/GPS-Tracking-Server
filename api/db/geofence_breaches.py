@@ -188,3 +188,37 @@ def check_geofence_breaches(
                 breach_events.append(event)
     
     return breach_events
+
+
+def mark_breach_notification_sent(
+    db_conn: PGConnection,
+    event_id: int,
+    notification_type: str,
+    sent_at: datetime | None = None
+) -> None:
+    """
+    Mark a geofence breach event as having a notification sent.
+    
+    :param db_conn: Database connection
+    :param event_id: GeofenceBreachEvent ID
+    :param notification_type: 'EMAIL' or 'SMS'
+    :param sent_at: Timestamp when notification was sent
+    """
+    if sent_at is None:
+        sent_at = datetime.now(timezone.utc)
+    
+    # Store notification audit in a table if it exists, otherwise just log
+    try:
+        with db_conn:
+            with db_conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO notification_audit_log 
+                    (event_id, notification_type, sent_at)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (event_id, notification_type, sent_at)
+                )
+                logger.debug(f"Marked {notification_type} notification sent for event {event_id}")
+    except Exception as e:
+        logger.warning(f"Could not record notification audit: {e}")
