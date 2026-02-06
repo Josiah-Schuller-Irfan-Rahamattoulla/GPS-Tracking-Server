@@ -2,6 +2,29 @@
 
 A FastAPI-based GPS tracking server with PostgreSQL database support for managing devices, users, and GPS location data.
 
+## Features
+
+✅ **Core Functionality**
+- Device registration and management
+- GPS data storage and retrieval
+- User authentication (JWT-based)
+- Geofence CRUD operations
+- Trip tracking (start/end detection)
+- Multi-device support per user
+- A-GNSS proxy for nRF Cloud
+
+✅ **Advanced Features**
+- **Server-side geofence breach detection** - Automatic monitoring of all devices
+- **Email notifications** - SMTP-based alerts for geofence breaches
+- **SMS notifications** - Twilio or AWS SNS integration for instant alerts
+- **Geofence breach event logging** - Complete audit trail with timestamps
+
+📋 **Planned Features** (see [FIRMWARE_INTEGRATION_PLAN.md](FIRMWARE_INTEGRATION_PLAN.md))
+- A-GNSS integration in firmware (5-10x faster GPS acquisition)
+- Offline GPS buffering (prevent data loss)
+- Adaptive upload frequency (power savings)
+- WebSocket support (real-time updates)
+
 ## Local Set-Up Instructions
 
 ### Prerequisites
