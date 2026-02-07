@@ -30,7 +30,11 @@ services:
     container_name: gps-tracking-api
     environment:
       DATABASE_URI: postgresql://${POSTGRES_USER:-gpsuser}:${POSTGRES_PASSWORD:-gpspassword}@db:5432/${POSTGRES_DB:-gps_tracking}
-      NRF_CLOUD_API_KEY: ${NRF_CLOUD_API_KEY}
+      NRF_CLOUD_API_KEY: ${NRF_CLOUD_API_KEY:-xu3FbQqmnbc663jlDdewFEgYgQRYrKs5}
+      AGNSS_PROVIDER: ${AGNSS_PROVIDER:-NRF_CLOUD}
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     ports:
       - "8000:8000"
     depends_on:

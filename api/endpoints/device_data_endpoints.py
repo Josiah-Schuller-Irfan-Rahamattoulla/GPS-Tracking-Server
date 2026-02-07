@@ -306,76 +306,87 @@ async def get_agnss_data(
     
     agnss_data = None
     source = None
-    
+    agnss_provider = os.getenv("AGNSS_PROVIDER", "").strip().upper()
+
+    def _provider_allows(provider: str) -> bool:
+        return (not agnss_provider) or agnss_provider == provider
+
     # Try 1: nRF Cloud (if API key configured)
-    nrf_cloud_api_key = os.getenv("NRF_CLOUD_API_KEY")
-    if nrf_cloud_api_key:
-        try:
-            logger.info("Attempting A-GNSS from nRF Cloud for device %d", device_id)
-            device_identifier = f"nrf-{device_id}"
-            url = "https://api.nrfcloud.com/v1/location/agps"
-            auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
-            params: dict[str, str | float] = {"deviceIdentifier": device_identifier}
-            if lat is not None and lon is not None:
-                params["latitude"] = lat
-                params["longitude"] = lon
-                logger.info("A-GNSS with position hint: lat=%.6f lon=%.6f", lat, lon)
-
-            def _parse_content_range(header_value: str | None) -> int | None:
-                """Parse Content-Range header and return total size, or None."""
-                if not header_value:
-                    return None
-                try:
-                    parts = header_value.strip().split()
-                    if len(parts) != 2 or parts[0].lower() != "bytes":
-                        return None
-                    range_part = parts[1]
-                    if "/" not in range_part:
-                        return None
-                    _, total_part = range_part.split("/", 1)
-                    if total_part == "*":
-                        return None
-                    return int(total_part)
-                except (ValueError, IndexError):
-                    return None
-
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    url,
-                    params=params,
-                    headers={**auth_headers, "Range": "bytes=0-16383"},
+    if _provider_allows("NRF_CLOUD"):
+        nrf_cloud_api_key = os.getenv("NRF_CLOUD_API_KEY")
+        if not nrf_cloud_api_key:
+            if agnss_provider == "NRF_CLOUD":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="NRF_CLOUD_API_KEY not configured",
                 )
+        else:
+            try:
+                logger.info("Attempting A-GNSS from nRF Cloud for device %d", device_id)
+                device_identifier = f"nrf-{device_id}"
+                url = "https://api.nrfcloud.com/v1/location/agps"
+                auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
+                params: dict[str, str | float] = {"deviceIdentifier": device_identifier}
+                if lat is not None and lon is not None:
+                    params["latitude"] = lat
+                    params["longitude"] = lon
+                    logger.info("A-GNSS with position hint: lat=%.6f lon=%.6f", lat, lon)
 
-                if response.status_code in (200, 206):
-                    chunks = [response.content]
-                    total_received = len(response.content)
-                    total_size = _parse_content_range(response.headers.get("Content-Range"))
+                def _parse_content_range(header_value: str | None) -> int | None:
+                    """Parse Content-Range header and return total size, or None."""
+                    if not header_value:
+                        return None
+                    try:
+                        parts = header_value.strip().split()
+                        if len(parts) != 2 or parts[0].lower() != "bytes":
+                            return None
+                        range_part = parts[1]
+                        if "/" not in range_part:
+                            return None
+                        _, total_part = range_part.split("/", 1)
+                        if total_part == "*":
+                            return None
+                        return int(total_part)
+                    except (ValueError, IndexError):
+                        return None
 
-                    # Fetch remaining ranges if needed
-                    while total_size is not None and total_received < total_size:
-                        next_start = total_received
-                        range_header = f"bytes={next_start}-"
-                        next_response = await client.get(
-                            url,
-                            params=params,
-                            headers={**auth_headers, "Range": range_header},
-                        )
-                        if next_response.status_code not in (200, 206):
-                            break
-                        chunk = next_response.content
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                        total_received += len(chunk)
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    response = await client.get(
+                        url,
+                        params=params,
+                        headers={**auth_headers, "Range": "bytes=0-16383"},
+                    )
 
-                    agnss_data = b"".join(chunks)
-                    source = "nRF Cloud"
-                    logger.info("A-GNSS from nRF Cloud: %d bytes", len(agnss_data))
-        except Exception as e:
-            logger.warning("nRF Cloud A-GNSS failed: %s", e)
-    
+                    if response.status_code in (200, 206):
+                        chunks = [response.content]
+                        total_received = len(response.content)
+                        total_size = _parse_content_range(response.headers.get("Content-Range"))
+
+                        # Fetch remaining ranges if needed
+                        while total_size is not None and total_received < total_size:
+                            next_start = total_received
+                            range_header = f"bytes={next_start}-"
+                            next_response = await client.get(
+                                url,
+                                params=params,
+                                headers={**auth_headers, "Range": range_header},
+                            )
+                            if next_response.status_code not in (200, 206):
+                                break
+                            chunk = next_response.content
+                            if not chunk:
+                                break
+                            chunks.append(chunk)
+                            total_received += len(chunk)
+
+                        agnss_data = b"".join(chunks)
+                        source = "nRF Cloud"
+                        logger.info("A-GNSS from nRF Cloud: %d bytes", len(agnss_data))
+            except Exception as e:
+                logger.warning("nRF Cloud A-GNSS failed: %s", e)
+
     # Try 2: SUPL (free servers, no auth required)
-    if not agnss_data:
+    if not agnss_data and _provider_allows("SUPL"):
         try:
             logger.info("Attempting A-GNSS from SUPL servers for device %d", device_id)
             agnss_data = await get_supl_assistance_data(device_id, lat, lon)
@@ -399,5 +410,5 @@ async def get_agnss_data(
     # Both failed
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-        detail="A-GNSS unavailable: nRF Cloud not configured and SUPL servers unreachable"
+        detail="A-GNSS unavailable: no provider returned data",
     )
