@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from endpoints import app_user_endpoints, device_data_endpoints
+from endpoints import app_user_endpoints, device_data_endpoints, cell_location
 from endpoints.authorisation import authorise_device, authorise_user
 
 # Load .env from api/ dir then project root (so it works from any cwd)
@@ -57,6 +57,12 @@ app.include_router(
     router=app_user_endpoints.auth_router,
     prefix="/v1",
     tags=["App authentication endpoints"],
+)
+app.include_router(
+    router=cell_location.router,
+    prefix="/v1",
+    dependencies=[Depends(authorise_device)],
+    tags=["Cell-based location services"],
 )
 
 
