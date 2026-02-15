@@ -195,45 +195,51 @@ async def get_cell_location(
     # TODO: Validate access_token against device_id if needed
     
     # Try providers in order of preference
-    provider = os.getenv("CELL_LOCATION_PROVIDER", "nrf_cloud")
-    
-    try:
-        if provider == "nrf_cloud":
-            api_key = os.getenv("NRF_CLOUD_API_KEY")
-            if not api_key:
-                raise HTTPException(status_code=503, detail="NRF_CLOUD_API_KEY not configured")
-            return await get_nrf_cloud_location(request.cells, api_key)
-        
-        elif provider == "here":
-            api_key = os.getenv("HERE_API_KEY")
-            if not api_key:
-                raise HTTPException(status_code=503, detail="HERE_API_KEY not configured")
-            return await get_here_location(request.cells, api_key)
-        
-        elif provider == "google":
-            api_key = os.getenv("GOOGLE_GEOLOCATION_API_KEY")
-            if not api_key:
-                raise HTTPException(status_code=503, detail="GOOGLE_GEOLOCATION_API_KEY not configured")
-            return await get_google_location(request.cells, api_key)
-        
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Unknown CELL_LOCATION_PROVIDER: {provider}"
-            )
-    
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Cell location provider error: {e.response.status_code} - {e.response.text}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"Cell location provider failed: {e.response.status_code}"
-        )
-    except httpx.RequestError as e:
-        logger.error(f"Cell location request error: {str(e)}")
-        raise HTTPException(
-            status_code=503,
-            detail="Cell location service unavailable"
-        )
-    except Exception as e:
-        logger.error(f"Unexpected error in cell location: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    provider = os.getenv("CELL_LOCATION_PROVIDER", "nrf_cloud").strip().lower()
+    if provider == "auto":
+        provider_order = ["nrf_cloud", "google", "here"]
+    else:
+        provider_order = [provider]
+
+    errors: list[str] = []
+
+    for candidate in provider_order:
+        try:
+            if candidate == "nrf_cloud":
+                api_key = os.getenv("NRF_CLOUD_API_KEY")
+                if not api_key:
+                    errors.append("NRF_CLOUD_API_KEY not configured")
+                    continue
+                return await get_nrf_cloud_location(request.cells, api_key)
+
+            if candidate == "google":
+                api_key = os.getenv("GOOGLE_GEOLOCATION_API_KEY")
+                if not api_key:
+                    errors.append("GOOGLE_GEOLOCATION_API_KEY not configured")
+                    continue
+                return await get_google_location(request.cells, api_key)
+
+            if candidate == "here":
+                api_key = os.getenv("HERE_API_KEY")
+                if not api_key:
+                    errors.append("HERE_API_KEY not configured")
+                    continue
+                return await get_here_location(request.cells, api_key)
+
+            errors.append(f"Unknown CELL_LOCATION_PROVIDER: {candidate}")
+
+        except httpx.HTTPStatusError as e:
+            logger.error("Cell location provider error: %s - %s", e.response.status_code, e.response.text)
+            errors.append(f"{candidate} HTTP {e.response.status_code}")
+        except httpx.RequestError as e:
+            logger.error("Cell location request error: %s", str(e))
+            errors.append(f"{candidate} request failed")
+        except Exception as e:
+            logger.error("Unexpected error in cell location: %s", str(e))
+            errors.append(f"{candidate} unexpected error")
+
+    detail = "Cell location unavailable"
+    if errors:
+        detail = f"Cell location unavailable: {', '.join(errors)}"
+
+    raise HTTPException(status_code=503, detail=detail)
