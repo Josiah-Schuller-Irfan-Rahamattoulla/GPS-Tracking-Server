@@ -20,6 +20,7 @@ from db.models import GeofenceBreachEvent
 from db.users import get_user
 from notifications.geofence_breach_notifications import notify_geofence_breach_events
 from notifications.sms_notifications import notify_geofence_breach_via_sms
+from agnss.cache_store import get_agnss_cache
 from agnss.supl_client import get_supl_assistance_data
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
@@ -306,6 +307,7 @@ async def get_agnss_data(
     
     agnss_data = None
     source = None
+    cache_status = None
     agnss_provider = os.getenv("AGNSS_PROVIDER", "").strip().upper()
 
     def _provider_allows(provider: str) -> bool:
@@ -382,29 +384,46 @@ async def get_agnss_data(
                         agnss_data = b"".join(chunks)
                         source = "nRF Cloud"
                         logger.info("A-GNSS from nRF Cloud: %d bytes", len(agnss_data))
+                    else:
+                        logger.warning("nRF Cloud A-GNSS returned %d: %s", response.status_code, response.text[:500])
             except Exception as e:
                 logger.warning("nRF Cloud A-GNSS failed: %s", e)
 
     # Try 2: SUPL (free servers, no auth required)
     if not agnss_data and _provider_allows("SUPL"):
         try:
-            logger.info("Attempting A-GNSS from SUPL servers for device %d", device_id)
-            agnss_data = await get_supl_assistance_data(device_id, lat, lon)
-            if agnss_data:
-                source = "SUPL"
-                logger.info("A-GNSS from SUPL: %d bytes", len(agnss_data))
+            cache = get_agnss_cache()
+            if cache.enabled:
+                cached = cache.get()
+                if cached:
+                    agnss_data = cached
+                    source = "SUPL cache"
+                    cache_status = "HIT"
+
+            if not agnss_data:
+                logger.info("Attempting A-GNSS from SUPL servers for device %d", device_id)
+                agnss_data = await get_supl_assistance_data(device_id, lat, lon)
+                if agnss_data:
+                    source = "SUPL"
+                    cache_status = "MISS"
+                    if cache.enabled:
+                        cache.set(agnss_data)
+                    logger.info("A-GNSS from SUPL: %d bytes", len(agnss_data))
         except Exception as e:
             logger.warning("SUPL A-GNSS failed: %s", e)
     
     # Return data if we got any
     if agnss_data:
+        headers = {
+            "Content-Length": str(len(agnss_data)),
+            "X-AGNSS-Source": source,
+        }
+        if cache_status:
+            headers["X-AGNSS-Cache"] = cache_status
         return Response(
             content=agnss_data,
             media_type="application/octet-stream",
-            headers={
-                "Content-Length": str(len(agnss_data)),
-                "X-AGNSS-Source": source,
-            },
+            headers=headers,
         )
     
     # Both failed

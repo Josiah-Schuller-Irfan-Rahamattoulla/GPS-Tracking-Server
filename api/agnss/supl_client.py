@@ -39,8 +39,10 @@ class SUPLClient:
     """Simple SUPL client for fetching A-GNSS data from public SUPL servers."""
     
     # Free SUPL servers (no authentication required)
+    # Using Google SUPL with IPv4 address first to bypass DNS issues
     SUPL_SERVERS = [
-        ("supl.google.com", 7276),      # Google's SUPL server
+        ("74.125.68.192", 7276),         # Google SUPL (resolved IPv4)
+        ("supl.google.com", 7276),      # Google's SUPL server  
         ("supl.nokia.com", 7275),        # Nokia's SUPL server
         ("supl.xse.com", 7275),          # XSE SUPL server
     ]
@@ -99,7 +101,7 @@ class SUPLClient:
         logger.debug(f"SUPL START message: {msg.hex()}")
         return bytes(msg)
     
-    async def fetch_assistance_data(self, latitude: Optional[float] = None,
+    def fetch_assistance_data(self, latitude: Optional[float] = None,
                                    longitude: Optional[float] = None) -> Optional[bytes]:
         """
         Fetch A-GNSS assistance data from SUPL server.
@@ -107,22 +109,50 @@ class SUPLClient:
         """
         
         for attempt, (host, port) in enumerate(self.SUPL_SERVERS):
+            sock = None
+            assistance_data = bytearray()
             try:
                 logger.info(f"Attempting SUPL connection to {host}:{port} (attempt {attempt + 1})")
                 
-                # Create socket
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(self.timeout)
+                # Resolve hostname and try all addresses (IPv4 and IPv6)
+                try:
+                    addr_info = socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                except socket.gaierror as dns_err:
+                    logger.warning(f"SUPL connection failed to {host}:{port}: {dns_err}")
+                    continue
                 
-                # Connect
-                sock.connect((host, port))
-                logger.info(f"Connected to {host}:{port}")
+                for family, socktype, proto, canonname, sockaddr in addr_info:
+                    try:
+                        # Create socket
+                        sock = socket.socket(family, socktype, proto)
+                        sock.settimeout(self.timeout)
+                        
+                        # Connect
+                        sock.connect(sockaddr)
+                        logger.info(f"Connected to {host}:{port} via {sockaddr}")
+                        break  # Connection successful
+                    except (socket.error, OSError) as conn_err:
+                        if sock:
+                            sock.close()
+                            sock = None
+                        logger.debug(f"Connection to {sockaddr} failed: {conn_err}")
+                        continue
+                
+                if not sock:
+                    logger.warning(f"SUPL connection failed to {host}:{port}: All addresses failed")
+                    continue
                 
                 # Send SUPL START
-                start_msg = self._create_suplstart(latitude, longitude)
-                length_header = self._encode_length(len(start_msg))
-                sock.sendall(length_header + start_msg)
-                logger.debug(f"Sent SUPL START ({len(start_msg)} bytes)")
+                try:
+                    start_msg = self._create_suplstart(latitude, longitude)
+                    length_header = self._encode_length(len(start_msg))
+                    sock.sendall(length_header + start_msg)
+                    logger.info(f"Sent SUPL START to {host}:{port} ({len(start_msg)} bytes)")
+                except Exception as send_err:
+                    logger.warning(f"Failed to send SUPL START to {host}:{port}: {send_err}")
+                    if sock:
+                        sock.close()
+                    continue
                 
                 # Receive response (try to get assistance data)
                 assistance_data = bytearray()
@@ -177,11 +207,20 @@ class SUPLClient:
                         logger.debug("Socket timeout while waiting for response")
                         break
                 
-                sock.close()
+                if sock:
+                    sock.close()
                 
                 if assistance_data:
-                    logger.info(f"Successfully fetched {len(assistance_data)} bytes from SUPL")
+                    logger.info(f"Successfully fetched {len(assistance_data)} bytes from SUPL server {host}:{port}")
                     return bytes(assistance_data)
+                else:
+                    logger.warning(f"No assistance data received from {host}:{port} after successful connection")
+            
+            except socket.gaierror as e:
+                logger.warning(f"SUPL connection failed to {host}:{port}: {e}")
+                if sock:
+                    sock.close()
+                continue
             
             except socket.error as e:
                 logger.warning(f"SUPL connection failed to {host}:{port}: {e}")
@@ -208,6 +247,7 @@ async def get_supl_assistance_data(device_id: int,
     For testing/demo purposes, returns sample A-GNSS data if SUPL_DEMO env var is set.
     """
     import os
+    import asyncio
     
     # Demo mode: return sample data for testing
     if os.getenv("SUPL_DEMO") == "1":
@@ -216,4 +256,5 @@ async def get_supl_assistance_data(device_id: int,
         return bytes([0x0a, 0x50, 0x75, 0x6c, 0x73, 0x61, 0x72]) + b"DEMO_AGNSS_DATA" * 20
     
     client = SUPLClient(device_id)
-    return await client.fetch_assistance_data(latitude, longitude)
+    # Run blocking socket operations in executor to avoid blocking async event loop
+    return await asyncio.to_thread(client.fetch_assistance_data, latitude, longitude)
