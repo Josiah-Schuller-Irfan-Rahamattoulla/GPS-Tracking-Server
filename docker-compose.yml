@@ -31,8 +31,8 @@ services:
     environment:
       DATABASE_URI: postgresql://${POSTGRES_USER:-gpsuser}:${POSTGRES_PASSWORD:-gpspassword}@db:5432/${POSTGRES_DB:-gps_tracking}
       NRF_CLOUD_API_KEY: ${NRF_CLOUD_API_KEY:-xu3FbQqmnbc663jlDdewFEgYgQRYrKs5}
-      # A-GNSS provider: SUPL or NRF_CLOUD
-      AGNSS_PROVIDER: ${AGNSS_PROVIDER:-SUPL}
+      # A-GNSS provider: empty = try nRF Cloud first, fallback to SUPL; or set to NRF_CLOUD or SUPL
+      AGNSS_PROVIDER: ${AGNSS_PROVIDER:-}
       SUPL_DEMO: ${SUPL_DEMO:-1}
       # Cell location provider: nrf_cloud, google, here, or auto
       CELL_LOCATION_PROVIDER: ${CELL_LOCATION_PROVIDER:-auto}
