@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, delete_all_devices, create_user_device_row, get_device
+from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, update_device_tracking, delete_all_devices, create_user_device_row, get_device
 from db.gps_data import get_gps_data
 from db.models import GPSData
 from db.users import get_user, get_user_by_email, create_user, verify_user_password
@@ -17,6 +17,7 @@ from db.geofences import (
 )
 from db.models import GeofenceBreachEvent
 from psycopg2.extras import RealDictCursor
+from endpoints.realtime_endpoints import broadcast_device_control_response
 
 router = APIRouter()  # Router for authenticated endpoints
 auth_router = APIRouter()  # Router for unauthenticated endpoints (login/signup)
@@ -148,6 +149,8 @@ class AppDeviceResponse(BaseModel):
     device_id: int
     sms_number: str
     name: str | None = None
+    remote_viewing: bool | None = None
+    last_viewed_at: datetime | None = None
     control_1: bool | None
     control_2: bool | None
     control_3: bool | None
@@ -199,6 +202,8 @@ async def get_user_devices(
             device_id=device.device_id,
             sms_number=device.sms_number,
             name=device.name,
+            remote_viewing=device.remote_viewing,
+            last_viewed_at=device.last_viewed_at,
             control_1=device.control_1,
             control_2=device.control_2,
             control_3=device.control_3,
@@ -272,12 +277,57 @@ async def get_device_endpoint(
         device_id=device.device_id,
         sms_number=device.sms_number,
         name=device.name,
+        remote_viewing=device.remote_viewing,
+        last_viewed_at=device.last_viewed_at,
         control_1=device.control_1,
         control_2=device.control_2,
         control_3=device.control_3,
         control_4=device.control_4,
         control_version=device.control_version,
         controls_updated_at=device.controls_updated_at,
+    )
+
+
+class DeviceTrackingUpdate(BaseModel):
+    remote_viewing: bool | None = None  # Set true when web/app is actively viewing device
+
+
+@router.put("/devices/{device_id}/tracking", response_model=AppDeviceResponse)
+async def update_device_tracking_endpoint(
+    device_id: int,
+    tracking: DeviceTrackingUpdate,
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Update device tracking configuration (hot/cold mode and upload intervals).
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+
+    updated_device = update_device_tracking(
+        db_conn=db_conn,
+        device_id=device_id,
+        user_id=user_id,
+        remote_viewing=tracking.remote_viewing,
+    )
+
+    if not updated_device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found or not owned by user",
+        )
+
+    return AppDeviceResponse(
+        device_id=updated_device.device_id,
+        sms_number=updated_device.sms_number,
+        name=updated_device.name,
+        remote_viewing=updated_device.remote_viewing,
+        last_viewed_at=updated_device.last_viewed_at,
+        control_1=updated_device.control_1,
+        control_2=updated_device.control_2,
+        control_3=updated_device.control_3,
+        control_4=updated_device.control_4,
+        control_version=updated_device.control_version,
+        controls_updated_at=updated_device.controls_updated_at,
     )
 
 
@@ -317,6 +367,16 @@ async def update_device_controls_endpoint(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Device not found, not owned by user, or version conflict",
         )
+
+    await broadcast_device_control_response(device_id, {
+        "device_id": updated_device.device_id,
+        "control_1": updated_device.control_1,
+        "control_2": updated_device.control_2,
+        "control_3": updated_device.control_3,
+        "control_4": updated_device.control_4,
+        "control_version": updated_device.control_version,
+        "controls_updated_at": updated_device.controls_updated_at.isoformat() if updated_device.controls_updated_at else None,
+    })
     
     return AppDeviceResponse(
         device_id=updated_device.device_id,

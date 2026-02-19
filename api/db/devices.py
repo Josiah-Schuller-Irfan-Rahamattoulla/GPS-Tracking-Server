@@ -288,3 +288,56 @@ def update_device_controls(
             cursor.execute(query, values)
             updated = cursor.fetchone()
             return Device(**updated) if updated else None
+
+
+def update_device_tracking(
+    db_conn: PGConnection,
+    device_id: int,
+    user_id: int,
+    remote_viewing: bool | None = None,
+) -> Device | None:
+    """
+    Update device remote viewing status.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device
+    :param user_id: ID of the user (for verification)
+    :param remote_viewing: True when web/app is actively viewing device (optional)
+    :return: Updated Device if successful, None if not found or not owned
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT d.* FROM devices d
+                JOIN users_devices ud ON d.device_id = ud.device_id
+                WHERE d.device_id = %s AND ud.user_id = %s
+                """,
+                (device_id, user_id),
+            )
+            device_row = cursor.fetchone()
+            if not device_row:
+                return None
+
+            if remote_viewing is None:
+                return Device(**device_row)
+
+            updates = ["remote_viewing = %s"]
+            values = [remote_viewing]
+            
+            if remote_viewing:
+                updates.append("last_viewed_at = CURRENT_TIMESTAMP")
+
+            set_clause = ", ".join(updates)
+
+            query = (
+                f"UPDATE devices d SET {set_clause} "
+                "FROM users_devices ud "
+                "WHERE d.device_id = ud.device_id AND d.device_id = %s AND ud.user_id = %s "
+                "RETURNING d.*"
+            )
+            values.extend([device_id, user_id])
+
+            cursor.execute(query, values)
+            updated = cursor.fetchone()
+            return Device(**updated) if updated else None

@@ -26,6 +26,8 @@ CREATE TABLE devices (
     access_token VARCHAR(255) NOT NULL,
     sms_number VARCHAR(20) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    remote_viewing BOOLEAN DEFAULT FALSE,
+    last_viewed_at TIMESTAMPTZ,
     control_1 BOOLEAN DEFAULT NULL,
     control_2 BOOLEAN DEFAULT NULL,
     control_3 BOOLEAN DEFAULT NULL,
@@ -73,6 +75,8 @@ COMMENT ON TABLE devices IS 'GPS tracking devices';
 COMMENT ON COLUMN devices.device_id IS 'Primary key - unique device identifier';
 COMMENT ON COLUMN devices.sms_number IS 'SMS/phone number for alerts; multiple devices may share the same number';
 COMMENT ON COLUMN devices.created_at IS 'Timestamp when device was registered';
+COMMENT ON COLUMN devices.remote_viewing IS 'True when web/app is actively viewing this device (triggers hot mode)';
+COMMENT ON COLUMN devices.last_viewed_at IS 'Timestamp when device was last viewed by user (via web/app)';
 COMMENT ON COLUMN devices.control_1 IS 'Device control setting 1';
 COMMENT ON COLUMN devices.control_2 IS 'Device control setting 2';
 COMMENT ON COLUMN devices.control_3 IS 'Device control setting 3';

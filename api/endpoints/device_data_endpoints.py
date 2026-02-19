@@ -22,6 +22,7 @@ from notifications.geofence_breach_notifications import notify_geofence_breach_e
 from notifications.sms_notifications import notify_geofence_breach_via_sms
 from agnss.cache_store import get_agnss_cache
 from agnss.supl_client import get_supl_assistance_data
+from endpoints.realtime_endpoints import broadcast_location_update, broadcast_geofence_breach
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
@@ -149,6 +150,28 @@ async def send_gps_data(device_data: DeviceData):
             f"GPS data triggered {len(all_breach_events)} geofence breach(es) "
             f"for device {device_data.device_id}"
         )
+
+    # Broadcast location update to all users watching this device (WebSocket)
+    location_data = {
+        "device_id": device_data.device_id,
+        "latitude": device_data.latitude,
+        "longitude": device_data.longitude,
+        "speed": device_data.speed,
+        "heading": device_data.heading,
+        "created_at": ts.isoformat()
+    }
+    await broadcast_location_update(device_data.device_id, location_data)
+
+    # Broadcast geofence breach alerts to subscribers
+    for breach_event in all_breach_events:
+        breach_data = {
+            "device_id": device_data.device_id,
+            "geofence_id": breach_event.geofence_id,
+            "latitude": device_data.latitude,
+            "longitude": device_data.longitude,
+            "breached_at": ts.isoformat()
+        }
+        await broadcast_geofence_breach(device_data.device_id, breach_event.geofence_id, breach_data)
 
     return DeviceDataResponse(
         success=True,
