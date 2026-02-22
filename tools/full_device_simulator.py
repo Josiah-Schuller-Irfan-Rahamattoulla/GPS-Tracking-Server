@@ -137,18 +137,19 @@ def register_device() -> bool:
         return False
 
 
-def link_to_user(user_id: int) -> bool:
-    """Link device to a user account"""
+def link_to_user(user_id: int, user_token: str) -> bool:
+    """Link device to a user account. Requires user token and device pairing code (access_token) in body."""
     print_step(2, "Linking Device to User")
     print_info(f"User ID: {user_id}")
     
     try:
         response = requests.post(
             f"{BASE_URL}/v1/registerDeviceToUser",
-            headers={"Access-Token": DEVICE_TOKEN},
+            headers={"Access-Token": user_token},
+            params={"user_id": user_id},
             json={
                 "device_id": DEVICE_ID,
-                "user_id": user_id
+                "access_token": DEVICE_TOKEN
             },
             timeout=10,
             verify=False
@@ -498,10 +499,14 @@ def main():
     
     # Step 2: Link to user (default to user ID 2 - irfanrahamattoulla)
     user_id = 2
+    user_token = ensure_user_access_token()
+    if not user_token:
+        print_error("No user access token (set USER_ACCESS_TOKEN or USER_EMAIL/USER_PASSWORD). Exiting.")
+        return
     print("\n" + "=" * 60)
     print(f"Linking device to User ID {user_id} (irfanrahamattoulla)")
     
-    if not link_to_user(user_id):
+    if not link_to_user(user_id, user_token):
         print_error("Failed to link device. Exiting.")
         return
     

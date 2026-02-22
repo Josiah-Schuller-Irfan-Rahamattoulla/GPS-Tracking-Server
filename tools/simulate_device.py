@@ -8,7 +8,7 @@ Usage examples:
 
 What it does:
 - POST /v1/registerDevice               (device token header not required)
-- POST /v1/registerDeviceToUser         (Access-Token: device token)
+- POST /v1/registerDeviceToUser         (Access-Token: user token; body: device_id, access_token)
 - POST /v1/sendGPSData                  (Access-Token: device token)
 - PUT  /v1/devices/{device_id}/controls (Access-Token: user token)
 
@@ -50,14 +50,16 @@ def register_device(base_url: str, device_id: int, device_token: str, sms_number
     return resp.json()
 
 
-def link_device_to_user(base_url: str, device_id: int, device_token: str, user_id: int) -> dict:
+def link_device_to_user(base_url: str, device_id: int, device_token: str, user_id: int, user_token: str) -> dict:
+    """Link device to user. Requires user token in header and device pairing code (access_token) in body."""
     resp = requests.post(
         f"{base_url}/v1/registerDeviceToUser",
         headers={
             "Content-Type": "application/json",
-            "Access-Token": device_token,
+            "Access-Token": user_token,
         },
-        json={"device_id": device_id, "user_id": user_id},
+        params={"user_id": user_id},
+        json={"device_id": device_id, "access_token": device_token},
         timeout=10,
         verify=False
     )
@@ -162,7 +164,7 @@ def main() -> None:
 
     try:
         print("[2/4] Linking device to user...")
-        link = link_device_to_user(args.base_url, device_id, device_token, user_id)
+        link = link_device_to_user(args.base_url, device_id, device_token, user_id, user_token)
         print("    OK:", json.dumps(link))
     except Exception as e:
         print("    Failed to link device to user:", e)

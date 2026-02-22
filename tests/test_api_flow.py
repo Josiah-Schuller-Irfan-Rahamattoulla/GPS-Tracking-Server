@@ -58,7 +58,7 @@ def test_signup_login_register_flow(test_entities):
         f"{base}/v1/registerDeviceToUser",
         headers={"Access-Token": access_token},
         params={"user_id": user_id},
-        json={"device_id": device["device_id"]},
+        json={"device_id": device["device_id"], "access_token": device["access_token"]},
         timeout=10,
     )
     link.raise_for_status()

@@ -1,11 +1,16 @@
 """Real-time WebSocket endpoints for live location streaming and notifications."""
 
 import json
+import os
 import time
 import logging
 from typing import Dict, Set, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from datetime import datetime
+from psycopg2 import connect
+
+from db.devices import get_device, get_user_ids_for_device
+from db.users import get_user_by_access_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -111,9 +116,15 @@ async def websocket_device_stream(
         await websocket.close(code=1008, reason="Missing device token")
         return
 
-    # TODO: Validate device token against DB
-    # For now, accept all connections with a token
-    
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        device = get_device(db_conn=db_conn, device_id=device_id)
+        if device is None or device.access_token != token:
+            await websocket.close(code=1008, reason="Invalid device or token")
+            return
+    finally:
+        db_conn.close()
+
     room = f"device_{device_id}"
     await manager.connect(room, websocket, {"device_id": device_id, "type": "device"})
 
@@ -169,10 +180,21 @@ async def websocket_user_stream(
         await websocket.close(code=1008, reason="Missing auth token")
         return
 
-    # TODO: Validate user token and check device ownership permissions
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        user = get_user_by_access_token(db_conn, token)
+        if user is None:
+            await websocket.close(code=1008, reason="Invalid user token")
+            return
+        user_ids_with_access = get_user_ids_for_device(db_conn, device_id)
+        if user.user_id not in user_ids_with_access:
+            await websocket.close(code=1008, reason="No access to this device")
+            return
+    finally:
+        db_conn.close()
 
     room = f"user_device_{device_id}"
-    await manager.connect(room, websocket, {"device_id": device_id, "type": "user", "user_token_hash": hash(token)})
+    await manager.connect(room, websocket, {"device_id": device_id, "type": "user", "user_id": user.user_id})
 
     try:
         last_ping = time.time()
@@ -218,8 +240,21 @@ async def websocket_geofence_alerts(
         await websocket.close(code=1008, reason="Missing auth token")
         return
 
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        user = get_user_by_access_token(db_conn, token)
+        if user is None:
+            await websocket.close(code=1008, reason="Invalid user token")
+            return
+        user_ids_with_access = get_user_ids_for_device(db_conn, device_id)
+        if user.user_id not in user_ids_with_access:
+            await websocket.close(code=1008, reason="No access to this device")
+            return
+    finally:
+        db_conn.close()
+
     room = f"geofence_{device_id}"
-    await manager.connect(room, websocket, {"device_id": device_id, "type": "geofence_alert"})
+    await manager.connect(room, websocket, {"device_id": device_id, "type": "geofence_alert", "user_id": user.user_id})
 
     try:
         while True:

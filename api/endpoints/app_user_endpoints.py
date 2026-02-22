@@ -1,3 +1,4 @@
+import hmac
 import os
 from datetime import datetime, timedelta
 
@@ -161,6 +162,7 @@ class AppDeviceResponse(BaseModel):
 
 class LinkDeviceRequest(BaseModel):
     device_id: int
+    access_token: str  # Device pairing code (printed on sticker); required to prove ownership
 
 
 @router.post("/registerDeviceToUser")
@@ -169,7 +171,8 @@ async def register_device_to_user(
     user_id: int = Query(..., description="User ID"),
 ):
     """
-    Endpoint to link an existing device to a user. Requires user auth.
+    Link an existing device to a user. Requires user auth and the device's access_token
+    (pairing code) so only someone with the sticker/device can claim it.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
     device = get_device(db_conn=db_conn, device_id=request.device_id)
@@ -177,6 +180,11 @@ async def register_device_to_user(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Device not found",
+        )
+    if not request.access_token or not hmac.compare_digest(device.access_token, request.access_token):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid pairing code for this device",
         )
     create_user_device_row(
         db_conn=db_conn,

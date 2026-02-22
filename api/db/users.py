@@ -64,6 +64,24 @@ def get_user_by_email(db_conn: PGConnection, email_address: str) -> User | None:
             return User(**row) if row else None
 
 
+def get_user_by_access_token(db_conn: PGConnection, access_token: str) -> User | None:
+    """
+    Retrieve a user from the database by their access token.
+
+    :param db_conn: Database connection object
+    :param access_token: User access token
+    :return: User data if found, None otherwise
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                "SELECT * FROM users WHERE access_token = %s",
+                (access_token,),
+            )
+            row = cursor.fetchone()
+            return User(**row) if row else None
+
+
 def create_user(
     db_conn: PGConnection,
     email_address: str,

@@ -38,17 +38,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r api/requirements-dev.txt
 
-      - name: Run pytest
+      - name: Run full test suite
         env:
           TEST_BASE_URL: http://localhost:8000
         run: |
-          pytest -q
-
-      - name: Run geofence breach script
-        env:
-          TEST_BASE_URL: http://localhost:8000
-        run: |
-          python test_geofence_breaches_v2.py
+          pytest tests/ -v
 
       - name: Tear down
         if: always()

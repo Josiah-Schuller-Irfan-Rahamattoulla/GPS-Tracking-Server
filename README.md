@@ -7,7 +7,7 @@ A FastAPI-based GPS tracking server with PostgreSQL database support for managin
 ✅ **Core Functionality**
 - Device registration and management
 - GPS data storage and retrieval
-- User authentication (JWT-based)
+- User authentication (opaque access tokens)
 - Geofence CRUD operations
 - Trip tracking (start/end detection)
 - Multi-device support per user
@@ -71,14 +71,15 @@ A FastAPI-based GPS tracking server with PostgreSQL database support for managin
    ```
 
 5. **Set up environment variables**
-   Create a `.env` file in the `api` directory with your database configuration:
+   Create a `.env` file in the `api` directory (see `.env.example`). Required:
    ```
-   DATABASE_URL=postgresql://username:password@server:5432/database_name
+   DATABASE_URI=postgresql://username:password@server:5432/database_name
    ```
 
 6. **Set up the database (OPTIONAL)**
    - Create a PostgreSQL database
-   - Run the SQL schema from `database/gps_tracking_database.sql`
+   - Run the SQL schema from `database/gps_tracking_database.sql`, then migrations in `database/migration_001_*` through `migration_004_*` in order.
+   - For device-in-vehicle flow and production readiness, see [docs/DEVICE_AND_PRODUCTION_READINESS.md](docs/DEVICE_AND_PRODUCTION_READINESS.md).
 
 ### Running the Application
 

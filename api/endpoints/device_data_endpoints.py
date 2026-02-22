@@ -289,7 +289,8 @@ async def get_device_controls(
         "control_3": device.control_3,
         "control_4": device.control_4,
         "control_version": device.control_version,
-        "controls_updated_at": device.controls_updated_at.isoformat() if device.controls_updated_at else None
+        "controls_updated_at": device.controls_updated_at.isoformat() if device.controls_updated_at else None,
+        "remote_viewing": bool(device.remote_viewing) if device.remote_viewing is not None else False,
     }
 
 

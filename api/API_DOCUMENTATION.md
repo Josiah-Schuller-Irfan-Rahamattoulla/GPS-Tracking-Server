@@ -121,20 +121,27 @@ Register a new GPS tracking device.
 ---
 
 #### POST `/v1/registerDeviceToUser`
-Associate a device with a user account.
+Link an existing device to a user account. Requires the device's pairing code (`access_token`) so only someone with the sticker/device can claim it.
 
 **Headers:**
-- `Access-Token`: Device access token
+- `Access-Token`: **User** access token
+
+**Query:**
+- `user_id`: User ID to link the device to
 
 **Request Body:**
 ```json
 {
   "device_id": 12345,
-  "user_id": 1
+  "access_token": "pairing-code-from-sticker"
 }
 ```
 
 **Response:**
+- `200`: Device linked successfully
+- `403`: Invalid pairing code for this device
+- `404`: Device not found
+
 ```json
 {
   "success": true,

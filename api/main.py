@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from endpoints import app_user_endpoints, device_data_endpoints, cell_location
+from endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints
 from endpoints.authorisation import authorise_device, authorise_user
 
 # Load .env from api/ dir then project root (so it works from any cwd)
@@ -26,10 +26,12 @@ app = FastAPI(
 async def health_check():
     return {"status": "healthy"}
 
-# Enable CORS (useful for frontend-backend communication)
+# CORS: use CORS_ORIGINS in production (comma-separated). Empty or unset = allow all (dev).
+_cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+allow_origins = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: not a great security practice. Change in production!
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -63,6 +65,12 @@ app.include_router(
     prefix="/v1",
     dependencies=[Depends(authorise_device)],
     tags=["Cell-based location services"],
+)
+# WebSocket routes (no HTTP auth; token in query string)
+app.include_router(
+    router=realtime_endpoints.router,
+    prefix="/v1",
+    tags=["WebSocket real-time streaming"],
 )
 
 
