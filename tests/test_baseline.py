@@ -12,9 +12,10 @@ BASE_URL = "http://localhost:8000/v1"
 def _unique_user():
     """Unique user payload to avoid duplicate key errors across runs."""
     ts = int(time.time())
+    rnd = random.randint(0, 999999)
     return {
-        "email_address": f"baseline_test_{ts}@example.com",
-        "phone_number": f"+1555{ts % 10000000:07d}",
+        "email_address": f"baseline_test_{ts}_{rnd}@example.com",
+        "phone_number": f"+1555{ts % 10000000:07d}{rnd % 1000:03d}",
         "name": "Baseline Test User",
         "password": "SecurePass123!",
     }
@@ -23,10 +24,11 @@ def _unique_user():
 def _unique_device():
     """Unique device payload (device_id int, access_token, sms_number, name)."""
     ts = int(time.time())
+    rnd = random.randint(0, 999999)
     return {
-        "device_id": 999000 + (ts % 1000),
-        "access_token": f"baseline_token_{ts}",
-        "sms_number": f"+1666{ts % 10000000:07d}",
+        "device_id": 999000 + (ts % 1000) + (rnd % 1000),
+        "access_token": f"baseline_token_{ts}_{rnd}",
+        "sms_number": f"+1666{ts % 10000000:07d}{rnd % 1000:03d}",
         "name": "Baseline Test Device",
     }
 

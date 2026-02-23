@@ -35,9 +35,9 @@ BASE = f"{HTTP_BASE}/v1"
 def _unique_device():
     """Unique device payload."""
     ts = int(time.time() * 1000)
-    rnd = random.randint(0, 999999)
+    rnd = random.randint(0, 99999999)
     return {
-        "device_id": 600000 + (rnd % 1000),
+        "device_id": 600000 + (ts % 100000) + (rnd % 100000),
         "access_token": f"device_flow_{ts}_{rnd}",
         "sms_number": f"+1555{ts % 10000000:07d}{rnd % 1000:03d}",
         "name": "Device Flow Test",
