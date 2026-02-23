@@ -70,6 +70,8 @@ def create_device(
     control_2: bool | None = None,
     control_3: bool | None = None,
     control_4: bool | None = None,
+    remote_viewing: bool = False,
+    last_viewed_at = None,
 ) -> None:
     """
     Create a new device in the database.
@@ -89,8 +91,8 @@ def create_device(
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, access_token, sms_number, name, control_1, control_2, control_3, control_4)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO devices (device_id, access_token, sms_number, name, control_1, control_2, control_3, control_4, remote_viewing, last_viewed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
@@ -102,6 +104,8 @@ def create_device(
                     control_2,
                     control_3,
                     control_4,
+                    remote_viewing,
+                    last_viewed_at,
                 ),
             )
 

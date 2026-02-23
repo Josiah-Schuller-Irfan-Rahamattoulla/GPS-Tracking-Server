@@ -188,6 +188,8 @@ class DeviceRegistrationData(BaseModel):
     control_2: bool | None = None
     control_3: bool | None = None
     control_4: bool | None = None
+    remote_viewing: bool = False
+    last_viewed_at = None
 
 
 @device_registration_router.post("/registerDevice")
@@ -230,6 +232,8 @@ async def register_device(device_data: DeviceRegistrationData):
             control_2=device_data.control_2,
             control_3=device_data.control_3,
             control_4=device_data.control_4,
+            remote_viewing=getattr(device_data, 'remote_viewing', False),
+            last_viewed_at=getattr(device_data, 'last_viewed_at', None),
         )
     except IntegrityError as e:
         db_conn.rollback()
@@ -282,16 +286,28 @@ async def get_device_controls(
             detail="Invalid access token"
         )
     
-    return {
-        "device_id": device.device_id,
-        "control_1": device.control_1,
-        "control_2": device.control_2,
-        "control_3": device.control_3,
-        "control_4": device.control_4,
-        "control_version": device.control_version,
-        "controls_updated_at": device.controls_updated_at.isoformat() if device.controls_updated_at else None,
-        "remote_viewing": bool(device.remote_viewing) if device.remote_viewing is not None else False,
+    # Always include remote_viewing, default to False if missing/null
+    # Always include remote_viewing, default to False if missing/null
+    result = {
+        "device_id": getattr(device, "device_id", None),
+        "control_1": getattr(device, "control_1", None),
+        "control_2": getattr(device, "control_2", None),
+        "control_3": getattr(device, "control_3", None),
+        "control_4": getattr(device, "control_4", None),
+        "control_version": getattr(device, "control_version", None),
+        "controls_updated_at": device.controls_updated_at.isoformat() if getattr(device, "controls_updated_at", None) else None,
+        "last_viewed_at": getattr(device, "last_viewed_at", None)
     }
+    # Guarantee remote_viewing is always present and never None
+    rv = getattr(device, "remote_viewing", False)
+    if rv is None:
+        rv = False
+    result["remote_viewing"] = bool(rv)
+    if "remote_viewing" not in result or result["remote_viewing"] is None:
+        result["remote_viewing"] = False
+    if result["last_viewed_at"] and hasattr(result["last_viewed_at"], "isoformat"):
+        result["last_viewed_at"] = result["last_viewed_at"].isoformat()
+    return result
 
 
 @router.get("/agnss")

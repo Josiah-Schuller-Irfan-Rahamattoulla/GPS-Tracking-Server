@@ -264,23 +264,32 @@ async def get_device_gps_data(
     )
 
 
+from fastapi import Header
+
 @router.get("/devices/{device_id}", response_model=AppDeviceResponse)
 async def get_device_endpoint(
     device_id: int,
-    user_id: int = Query(..., description="User ID"),
+    user_id: int | None = Query(None, description="User ID"),
+    access_token: str = Header(None, alias="Access-Token")
 ):
     """
-    Get a single device by ID. Verifies user owns the device.
+    Get a single device by ID. Allows access by user ownership or valid device access token.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    
-    device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+    device = None
+    # Try device token first if provided
+    if access_token:
+        dev = get_device(db_conn=db_conn, device_id=device_id)
+        if dev and dev.access_token == access_token:
+            device = dev
+    # If not found, try user ownership if user_id is provided
+    if device is None and user_id is not None:
+        device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
     if not device:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found or not owned by user",
+            detail="Device not found, not owned by user, or invalid device token",
         )
-    
     return AppDeviceResponse(
         device_id=device.device_id,
         sms_number=device.sms_number,

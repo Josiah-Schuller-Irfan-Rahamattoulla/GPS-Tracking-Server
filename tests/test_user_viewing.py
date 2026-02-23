@@ -23,10 +23,12 @@ def _make_user_and_device():
         "name": "Viewing Test User",
         "password": "Pass123!",
     }
+    import uuid
+    unique = uuid.uuid4().int & (1<<31)-1
     device = {
-        "device_id": 888000 + (rnd % 1000),
-        "access_token": f"view_device_{ts}_{rnd}",
-        "sms_number": f"+1999{ts % 10000000:07d}{rnd % 1000:03d}",
+        "device_id": 888000 + (ts % 1000) + (unique % 1000000),
+        "access_token": f"view_device_{ts}_{unique}",
+        "sms_number": f"+1999{ts % 10000000:07d}{unique % 1000:03d}",
         "name": "Viewing Test Device",
     }
     r = requests.post(f"{BASE}/signup", json=user, timeout=10)
@@ -44,6 +46,9 @@ def _make_user_and_device():
         timeout=10,
     ).raise_for_status()
 
+    # Ensure DB commit visibility for subsequent API calls
+    time.sleep(0.1)
+
     return user_id, access_token, device["device_id"]
 
 
@@ -58,10 +63,12 @@ def test_link_device_requires_correct_access_token():
             "name": "Link Security User",
             "password": "Pass123!",
         }
+        import uuid
+        unique = uuid.uuid4().int & (1<<31)-1
         device = {
-            "device_id": 777000 + (rnd % 1000),
-            "access_token": f"secret_pairing_{ts}_{rnd}",
-            "sms_number": f"+1666{ts % 10000000:07d}{rnd % 1000:03d}",
+            "device_id": 777000 + (ts % 1000) + (unique % 1000000),
+            "access_token": f"secret_pairing_{ts}_{unique}",
+            "sms_number": f"+1666{ts % 10000000:07d}{unique % 1000:03d}",
         }
         r = requests.post(f"{BASE}/signup", json=user, timeout=10)
         r.raise_for_status()

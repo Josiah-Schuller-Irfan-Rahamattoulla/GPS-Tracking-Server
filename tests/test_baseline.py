@@ -3,6 +3,7 @@ Baseline test suite to lock down current API behavior.
 Run with: pytest tests/test_baseline.py
 """
 import time
+import random
 import requests
 import pytest
 from datetime import datetime, timezone
@@ -23,12 +24,13 @@ def _unique_user():
 
 def _unique_device():
     """Unique device payload (device_id int, access_token, sms_number, name)."""
+    import uuid
+    unique = uuid.uuid4().int & (1<<31)-1
     ts = int(time.time())
-    rnd = random.randint(0, 999999)
     return {
-        "device_id": 999000 + (ts % 1000) + (rnd % 1000),
-        "access_token": f"baseline_token_{ts}_{rnd}",
-        "sms_number": f"+1666{ts % 10000000:07d}{rnd % 1000:03d}",
+        "device_id": 999000 + (ts % 1000) + (unique % 1000000),
+        "access_token": f"baseline_token_{ts}_{unique}",
+        "sms_number": f"+1666{ts % 10000000:07d}{unique % 1000:03d}",
         "name": "Baseline Test Device",
     }
 

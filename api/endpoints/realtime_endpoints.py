@@ -1,6 +1,7 @@
 """Real-time WebSocket endpoints for live location streaming and notifications."""
 
 import json
+import asyncio
 import os
 import time
 import logging
@@ -113,14 +114,18 @@ async def websocket_device_stream(
     - token: Device authentication token
     """
     if not token:
+        logger.warning(f"WebSocket device {device_id} rejected: missing token")
         await websocket.close(code=1008, reason="Missing device token")
+        await asyncio.sleep(0.05)  # Ensure close frame is sent
         return
 
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
     try:
         device = get_device(db_conn=db_conn, device_id=device_id)
         if device is None or device.access_token != token:
+            logger.warning(f"WebSocket device {device_id} rejected: invalid token")
             await websocket.close(code=1008, reason="Invalid device or token")
+            await asyncio.sleep(0.05)
             return
     finally:
         db_conn.close()

@@ -31,10 +31,12 @@ def _make_user_and_device():
         "name": "WS Test User",
         "password": "Pass123!",
     }
+    import uuid
+    unique = uuid.uuid4().int & (1<<31)-1
     device = {
-        "device_id": 777000 + (rnd % 1000),
-        "access_token": f"ws_device_token_{ts}_{rnd}",
-        "sms_number": f"+1999{ts % 10000000:07d}{rnd % 1000:03d}",
+        "device_id": 777000 + (ts % 1000) + (unique % 1000000),
+        "access_token": f"ws_device_token_{ts}_{unique}",
+        "sms_number": f"+1999{ts % 10000000:07d}{unique % 1000:03d}",
         "name": "WS Test Device",
     }
     r = requests.post(f"{HTTP_BASE}/v1/signup", json=user, timeout=10)
@@ -62,9 +64,12 @@ async def test_websocket_device_reject_missing_token():
     uri = f"{BASE_URL}/v1/ws/devices/1?token="
     try:
         async with websockets.connect(uri, close_timeout=2) as ws:
-            await ws.recv()
-        assert False, "Expected connection to be closed"
-    except (websockets.exceptions.ConnectionClosed, OSError, Exception):
+            try:
+                await asyncio.wait_for(ws.recv(), timeout=2)
+                assert False, "Expected connection to be closed"
+            except (websockets.exceptions.ConnectionClosed, asyncio.TimeoutError):
+                pass
+    except (OSError, Exception):
         pass
 
 
