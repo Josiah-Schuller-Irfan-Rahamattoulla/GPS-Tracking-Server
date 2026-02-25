@@ -41,7 +41,12 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
                 (device_id,),
             )
             device = cursor.fetchone()
-            return Device(**device) if device else None
+            if device is not None:
+                # Guarantee remote_viewing is always present and never None
+                if "remote_viewing" not in device or device["remote_viewing"] is None:
+                    device["remote_viewing"] = False
+                return Device(**device)
+            return None
 
 
 def get_user_ids_for_device(db_conn: PGConnection, device_id: int) -> list[int]:

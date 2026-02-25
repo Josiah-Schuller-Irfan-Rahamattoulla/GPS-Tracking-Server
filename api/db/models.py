@@ -8,7 +8,7 @@ class Device(BaseModel):
     access_token: str
     sms_number: str
     created_at: datetime
-    remote_viewing: bool | None = None
+    remote_viewing: bool = False
     last_viewed_at: datetime | None = None
     name: str | None = None
     control_1: bool | None

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, Security, status
 
 logger = logging.getLogger(__name__)
 from fastapi.security import APIKeyHeader
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from psycopg2 import connect
 from psycopg2 import IntegrityError, OperationalError
 from pydantic import BaseModel
@@ -189,7 +189,7 @@ class DeviceRegistrationData(BaseModel):
     control_3: bool | None = None
     control_4: bool | None = None
     remote_viewing: bool = False
-    last_viewed_at = None
+    last_viewed_at: datetime | None = None
 
 
 @device_registration_router.post("/registerDevice")
@@ -255,7 +255,21 @@ async def register_device(device_data: DeviceRegistrationData):
     return {"success": True, "message": "Device registered successfully"}
 
 
-@router.get("/getDeviceControls")
+
+# Define a response model for device controls
+class DeviceControlsResponse(BaseModel):
+    device_id: int
+    control_1: bool | None = None
+    control_2: bool | None = None
+    control_3: bool | None = None
+    control_4: bool | None = None
+    control_version: int | None = None
+    controls_updated_at: str | None = None
+    last_viewed_at: str | None = None
+    remote_viewing: bool = False
+
+
+@router.get("/getDeviceControls", response_model=DeviceControlsResponse)
 async def get_device_controls(
     device_id: int = Query(..., description="Device ID"),
     access_token: str = Security(access_token_header)
@@ -269,9 +283,7 @@ async def get_device_controls(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Access token is required"
         )
-    
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    
     # Verify device and token
     device = get_device(db_conn=db_conn, device_id=device_id)
     if not device:
@@ -279,35 +291,35 @@ async def get_device_controls(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Device not found"
         )
-    
     if device.access_token != access_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid access token"
         )
-    
     # Always include remote_viewing, default to False if missing/null
-    # Always include remote_viewing, default to False if missing/null
-    result = {
+    # Debug: log device type and contents
+    print(f"DEBUG getDeviceControls: device type={type(device)}, device={device}")
+    remote_viewing_val = getattr(device, "remote_viewing", False)
+    if remote_viewing_val is None:
+        remote_viewing_val = False
+    # Manually build response dict and always include remote_viewing
+    controls = {
         "device_id": getattr(device, "device_id", None),
         "control_1": getattr(device, "control_1", None),
         "control_2": getattr(device, "control_2", None),
         "control_3": getattr(device, "control_3", None),
         "control_4": getattr(device, "control_4", None),
         "control_version": getattr(device, "control_version", None),
-        "controls_updated_at": device.controls_updated_at.isoformat() if getattr(device, "controls_updated_at", None) else None,
-        "last_viewed_at": getattr(device, "last_viewed_at", None)
+        "controls_updated_at": getattr(device, "controls_updated_at", None).isoformat() if getattr(device, "controls_updated_at", None) and hasattr(getattr(device, "controls_updated_at", None), "isoformat") else None,
+        "last_viewed_at": getattr(device, "last_viewed_at", None).isoformat() if getattr(device, "last_viewed_at", None) and hasattr(getattr(device, "last_viewed_at", None), "isoformat") else None,
     }
-    # Guarantee remote_viewing is always present and never None
-    rv = getattr(device, "remote_viewing", False)
+    rv = getattr(device, "remote_viewing", None)
     if rv is None:
-        rv = False
-    result["remote_viewing"] = bool(rv)
-    if "remote_viewing" not in result or result["remote_viewing"] is None:
-        result["remote_viewing"] = False
-    if result["last_viewed_at"] and hasattr(result["last_viewed_at"], "isoformat"):
-        result["last_viewed_at"] = result["last_viewed_at"].isoformat()
-    return result
+        controls["remote_viewing"] = False
+    else:
+        controls["remote_viewing"] = rv
+    print(f"DEBUG /getDeviceControls response: {controls}")
+    return JSONResponse(content=controls)
 
 
 @router.get("/agnss")

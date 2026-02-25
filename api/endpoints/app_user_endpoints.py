@@ -276,20 +276,27 @@ async def get_device_endpoint(
     Get a single device by ID. Allows access by user ownership or valid device access token.
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    # Device access: allow with valid device access token, no user_id required
     device = None
-    # Try device token first if provided
     if access_token:
         dev = get_device(db_conn=db_conn, device_id=device_id)
         if dev and dev.access_token == access_token:
             device = dev
-    # If not found, try user ownership if user_id is provided
+    # User access: allow with valid user_id (and user must own device)
     if device is None and user_id is not None:
         device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+    # Error handling
     if not device:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found, not owned by user, or invalid device token",
-        )
+        if access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token or device not found",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User ID is required",
+            )
     return AppDeviceResponse(
         device_id=device.device_id,
         sms_number=device.sms_number,
