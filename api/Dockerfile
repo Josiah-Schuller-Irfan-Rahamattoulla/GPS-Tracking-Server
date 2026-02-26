@@ -34,6 +34,8 @@ COPY --from=builder /install /usr/local
 # Copy source files
 COPY db/ ./db/
 COPY endpoints/ ./endpoints/
+COPY agnss/ ./agnss/
+COPY notifications/ ./notifications/
 COPY main.py .
 
 # Set environment variables (optional)

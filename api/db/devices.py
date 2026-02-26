@@ -41,7 +41,28 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
                 (device_id,),
             )
             device = cursor.fetchone()
-            return Device(**device) if device else None
+            if device is not None:
+                # Guarantee remote_viewing is always present and never None
+                if "remote_viewing" not in device or device["remote_viewing"] is None:
+                    device["remote_viewing"] = False
+                return Device(**device)
+            return None
+
+
+def get_user_ids_for_device(db_conn: PGConnection, device_id: int) -> list[int]:
+    """
+    Retrieve all user IDs associated with a device.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device
+    :return: List of user IDs who have access to this device
+    """
+    with db_conn.cursor() as cursor:
+        cursor.execute(
+            "SELECT user_id FROM users_devices WHERE device_id = %s",
+            (device_id,),
+        )
+        return [row[0] for row in cursor.fetchall()]
 
 
 def create_device(
@@ -49,10 +70,13 @@ def create_device(
     device_id: int,
     access_token: str,
     sms_number: str,
+    name: str | None = None,
     control_1: bool | None = None,
     control_2: bool | None = None,
     control_3: bool | None = None,
     control_4: bool | None = None,
+    remote_viewing: bool = False,
+    last_viewed_at = None,
 ) -> None:
     """
     Create a new device in the database.
@@ -61,6 +85,7 @@ def create_device(
     :param device_id: ID of the device to create
     :param access_token: Access token for the device
     :param sms_number: SMS number associated with the device
+    :param name: User-friendly device name (optional)
     :param control_1: Control 1 state (optional)
     :param control_2: Control 2 state (optional)
     :param control_3: Control 3 state (optional)
@@ -71,18 +96,21 @@ def create_device(
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, access_token, sms_number, control_1, control_2, control_3, control_4)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO devices (device_id, access_token, sms_number, name, control_1, control_2, control_3, control_4, remote_viewing, last_viewed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING *
                 """,
                 (
                     device_id,
                     access_token,
                     sms_number,
+                    name,
                     control_1,
                     control_2,
                     control_3,
                     control_4,
+                    remote_viewing,
+                    last_viewed_at,
                 ),
             )
 
@@ -90,6 +118,7 @@ def create_device(
 def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) -> None:
     """
     Create a row in the users_devices table to link a user and a device.
+    If the link already exists, this is a no-op (handles duplicate registration gracefully).
 
     :param db_conn: Database connection object
     :param user_id: ID of the user
@@ -97,10 +126,227 @@ def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) 
     """
     with db_conn:
         with db_conn.cursor() as cursor:
+            # Use ON CONFLICT DO NOTHING to handle duplicate links gracefully
+            # PRIMARY KEY is on (user_id, device_id), so ON CONFLICT will catch duplicates
             cursor.execute(
-                "INSERT INTO users_devices (user_id, device_id) VALUES (%s, %s)",
-                (
-                    user_id,
-                    device_id,
-                ),
+                """
+                INSERT INTO users_devices (user_id, device_id) 
+                VALUES (%s, %s)
+                ON CONFLICT (user_id, device_id) DO NOTHING
+                """,
+                (user_id, device_id),
             )
+
+
+def get_device_by_user(db_conn: PGConnection, device_id: int, user_id: int) -> Device | None:
+    """
+    Retrieve a device and verify it belongs to the user.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device
+    :param user_id: ID of the user
+    :return: Device if found and owned by user, None otherwise
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT d.* FROM devices d
+                JOIN users_devices ud ON d.device_id = ud.device_id
+                WHERE d.device_id = %s AND ud.user_id = %s
+                """,
+                (device_id, user_id),
+            )
+            device = cursor.fetchone()
+            return Device(**device) if device else None
+
+
+def delete_all_devices(db_conn: PGConnection, user_id: int) -> int:
+    """
+    Delete all devices associated with a user.
+    This deletes from users_devices (user-device links) and devices tables.
+    Also deletes associated GPS data and geofences.
+
+    :param db_conn: Database connection object
+    :param user_id: ID of the user whose devices should be deleted
+    :return: Number of devices deleted
+    """
+    with db_conn:
+        with db_conn.cursor() as cursor:
+            # Get device IDs for this user
+            cursor.execute(
+                "SELECT device_id FROM users_devices WHERE user_id = %s",
+                (user_id,)
+            )
+            device_ids = [row[0] for row in cursor.fetchall()]
+            
+            if not device_ids:
+                return 0
+            
+            # Delete GPS data for these devices
+            cursor.execute(
+                "DELETE FROM gps_data WHERE device_id = ANY(%s)",
+                (device_ids,)
+            )
+            
+            # Delete geofences for this user (geofences are user-scoped, not device-scoped)
+            cursor.execute(
+                "DELETE FROM geofences WHERE user_id = %s",
+                (user_id,)
+            )
+            
+            # Delete user-device links
+            cursor.execute(
+                "DELETE FROM users_devices WHERE user_id = %s",
+                (user_id,)
+            )
+            
+            # Delete devices themselves
+            cursor.execute(
+                "DELETE FROM devices WHERE device_id = ANY(%s)",
+                (device_ids,)
+            )
+            
+            return len(device_ids)
+
+
+def update_device_controls(
+    db_conn: PGConnection,
+    device_id: int,
+    user_id: int,
+    control_1: bool | None = None,
+    control_2: bool | None = None,
+    control_3: bool | None = None,
+    control_4: bool | None = None,
+    expected_version: int | None = None,
+) -> Device | None:
+    """
+    Update device control flags with optimistic locking.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device
+    :param user_id: ID of the user (for verification)
+    :param control_1: Control 1 state (optional)
+    :param control_2: Control 2 state (optional)
+    :param control_3: Control 3 state (optional)
+    :param control_4: Control 4 state (optional)
+    :param expected_version: Expected control_version for optimistic locking (optional)
+    :return: Updated Device if successful, None if not found or version conflict
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # First verify device belongs to user and get current state
+            cursor.execute(
+                """
+                SELECT d.* FROM devices d
+                JOIN users_devices ud ON d.device_id = ud.device_id
+                WHERE d.device_id = %s AND ud.user_id = %s
+                """,
+                (device_id, user_id),
+            )
+            device_row = cursor.fetchone()
+            if not device_row:
+                return None
+            
+            device = Device(**device_row)
+            
+            # Check version if provided (optimistic locking)
+            if expected_version is not None:
+                current_version = device.control_version if device.control_version is not None else 0
+                if current_version != expected_version:
+                    return None  # Version conflict
+            
+            # Build update query
+            updates = []
+            values = []
+            
+            if control_1 is not None:
+                updates.append("control_1 = %s")
+                values.append(control_1)
+            if control_2 is not None:
+                updates.append("control_2 = %s")
+                values.append(control_2)
+            if control_3 is not None:
+                updates.append("control_3 = %s")
+                values.append(control_3)
+            if control_4 is not None:
+                updates.append("control_4 = %s")
+                values.append(control_4)
+            
+            if not updates:
+                return device  # No updates, return existing
+            
+            # Increment version and update timestamp
+            updates.append("control_version = COALESCE(control_version, 0) + 1")
+            updates.append("controls_updated_at = CURRENT_TIMESTAMP")
+            
+            # Build WHERE clause and SET clause safely
+            set_clause = ', '.join(updates)
+            where_clause = ' AND '.join(["d.device_id = ud.device_id", "d.device_id = %s", "ud.user_id = %s"])
+            
+            if expected_version is not None:
+                where_clause += " AND d.control_version = %s"
+                values.append(expected_version)
+            
+            query = (
+                f"UPDATE devices d SET {set_clause} "
+                f"FROM users_devices ud WHERE {where_clause} RETURNING d.*"
+            )
+            values.extend([device_id, user_id])
+            
+            cursor.execute(query, values)
+            updated = cursor.fetchone()
+            return Device(**updated) if updated else None
+
+
+def update_device_tracking(
+    db_conn: PGConnection,
+    device_id: int,
+    user_id: int,
+    remote_viewing: bool | None = None,
+) -> Device | None:
+    """
+    Update device remote viewing status.
+
+    :param db_conn: Database connection object
+    :param device_id: ID of the device
+    :param user_id: ID of the user (for verification)
+    :param remote_viewing: True when web/app is actively viewing device (optional)
+    :return: Updated Device if successful, None if not found or not owned
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                SELECT d.* FROM devices d
+                JOIN users_devices ud ON d.device_id = ud.device_id
+                WHERE d.device_id = %s AND ud.user_id = %s
+                """,
+                (device_id, user_id),
+            )
+            device_row = cursor.fetchone()
+            if not device_row:
+                return None
+
+            if remote_viewing is None:
+                return Device(**device_row)
+
+            updates = ["remote_viewing = %s"]
+            values = [remote_viewing]
+            
+            if remote_viewing:
+                updates.append("last_viewed_at = CURRENT_TIMESTAMP")
+
+            set_clause = ", ".join(updates)
+
+            query = (
+                f"UPDATE devices d SET {set_clause} "
+                "FROM users_devices ud "
+                "WHERE d.device_id = ud.device_id AND d.device_id = %s AND ud.user_id = %s "
+                "RETURNING d.*"
+            )
+            values.extend([device_id, user_id])
+
+            cursor.execute(query, values)
+            updated = cursor.fetchone()
+            return Device(**updated) if updated else None

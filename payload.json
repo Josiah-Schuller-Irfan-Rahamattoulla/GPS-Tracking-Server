@@ -1,0 +1,8 @@
+{
+  "device_id": 67,
+  "access_token": "sim_device_12345_123456789",
+  "sms_number": "+61412345678",
+  "name": "nRF9151-GPS-Tracker",
+  "control_1": null,
+  "control_2": null
+}

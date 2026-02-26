@@ -12,6 +12,9 @@ def add_gps_data(
     timestamp: datetime,
     latitude: float,
     longitude: float,
+    speed: float | None = None,
+    heading: float | None = None,
+    trip_active: bool | None = None,
 ):
     """
     Add GPS data to the database.
@@ -20,12 +23,16 @@ def add_gps_data(
     :param timestamp: Timestamp of the GPS data
     :param latitude: Latitude of the GPS data
     :param longitude: Longitude of the GPS data
+    :param speed: Vehicle speed in km/h (optional)
+    :param heading: Compass heading in degrees 0-360 (optional)
+    :param trip_active: Hardware IMU-detected trip status (optional)
     """
     with db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO gps_data (device_id, time, latitude, longitude) VALUES (%s, %s, %s, %s)",
-                (device_id, timestamp, latitude, longitude),
+                """INSERT INTO gps_data (device_id, time, latitude, longitude, speed, heading, trip_active) 
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (device_id, timestamp, latitude, longitude, speed, heading, trip_active),
             )
 
 

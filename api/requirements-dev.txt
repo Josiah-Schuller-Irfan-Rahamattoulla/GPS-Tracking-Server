@@ -17,6 +17,10 @@ ciso8601==2.3.2
     # via just
 click==8.2.1
     # via uvicorn
+colorama==0.4.6
+    # via
+    #   click
+    #   pytest
 fastapi==0.116.1
     # via gps-tracking-api (pyproject.toml)
 glob2==0.7
@@ -63,6 +67,10 @@ pydantic-core==2.33.2
 pygments==2.19.2
     # via pytest
 pytest==8.4.1
+    # via
+    #   gps-tracking-api (pyproject.toml)
+    #   pytest-asyncio
+pytest-asyncio==0.25.2
     # via gps-tracking-api (pyproject.toml)
 python-dateutil==2.9.0.post0
     # via pandas
@@ -99,4 +107,6 @@ tzdata==2025.2
 urllib3==2.5.0
     # via requests
 uvicorn==0.35.0
+    # via gps-tracking-api (pyproject.toml)
+websockets==16.0
     # via gps-tracking-api (pyproject.toml)

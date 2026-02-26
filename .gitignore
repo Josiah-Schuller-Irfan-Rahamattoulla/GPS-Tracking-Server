@@ -1,8 +1,32 @@
 
 **.venv
+venv/
+env/
+.venv/
 
 **__pycache__
+*.py[cod]
 
 **.DS_Store
 
-**.env
+# IDE/editor configs
+.vscode/
+.idea/
+
+# Local env and secrets
+.env
+.env.*
+*.env
+
+# Python tooling caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Local test outputs
+last_test_output*.txt
+
+# Binary blobs
+agnss.bin

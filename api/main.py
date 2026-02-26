@@ -1,12 +1,19 @@
+import os
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
-from endpoints import app_user_endpoints, device_data_endpoints
+from endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints
 from endpoints.authorisation import authorise_device, authorise_user
 
-load_dotenv()  # Load environment variables from .env file
+# Load .env from api/ dir then project root (so it works from any cwd)
+_api_dir = os.path.abspath(os.path.dirname(__file__))
+_root_dir = os.path.abspath(os.path.join(_api_dir, ".."))
+for _d in (_api_dir, _root_dir):
+    _env = os.path.join(_d, ".env")
+    if os.path.isfile(_env):
+        load_dotenv(_env)
 
 app = FastAPI(
     title="GPS Tracking Server API",
@@ -19,10 +26,12 @@ app = FastAPI(
 async def health_check():
     return {"status": "healthy"}
 
-# Enable CORS (useful for frontend-backend communication)
+# CORS: use CORS_ORIGINS in production (comma-separated). Empty or unset = allow all (dev).
+_cors_origins = os.getenv("CORS_ORIGINS", "").strip()
+allow_origins = [o.strip() for o in _cors_origins.split(",") if o.strip()] if _cors_origins else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: not a great security practice. Change in production!
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +59,18 @@ app.include_router(
     router=app_user_endpoints.auth_router,
     prefix="/v1",
     tags=["App authentication endpoints"],
+)
+app.include_router(
+    router=cell_location.router,
+    prefix="/v1",
+    dependencies=[Depends(authorise_device)],
+    tags=["Cell-based location services"],
+)
+# WebSocket routes (no HTTP auth; token in query string)
+app.include_router(
+    router=realtime_endpoints.router,
+    prefix="/v1",
+    tags=["WebSocket real-time streaming"],
 )
 
 
