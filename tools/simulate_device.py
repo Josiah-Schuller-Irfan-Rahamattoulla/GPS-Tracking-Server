@@ -162,22 +162,27 @@ def main() -> None:
         print("    Failed to register device:", e)
         return
 
+    linked = False
     try:
         print("[2/4] Linking device to user...")
         link = link_device_to_user(args.base_url, device_id, device_token, user_id, user_token)
         print("    OK:", json.dumps(link))
+        linked = True
     except Exception as e:
         print("    Failed to link device to user:", e)
-        return
+        print("    Continuing without link (simulating device-only flows).")
 
     if args.toggle_kill:
-        try:
-            print("[3/4] Enabling kill switch (control_1=True)...")
-            res = update_controls(args.base_url, user_token, user_id, device_id, True)
-            print("    OK:", json.dumps(res))
-        except Exception as e:
-            print("    Failed to set kill switch:", e)
-            return
+        if linked:
+            try:
+                print("[3/4] Enabling kill switch (control_1=True)...")
+                res = update_controls(args.base_url, user_token, user_id, device_id, True)
+                print("    OK:", json.dumps(res))
+            except Exception as e:
+                print("    Failed to set kill switch:", e)
+                return
+        else:
+            print("[3/4] Skipping kill switch: device not linked to user.")
 
     print("[4/4] Streaming GPS points...")
     for idx, (lat, lon) in enumerate(path_generator(start_lat, start_lon, args.step_m, args.points), start=1):
@@ -191,12 +196,15 @@ def main() -> None:
 
         # Toggle kill switch off near the end when requested
         if args.toggle_kill and idx == args.points // 2:
-            try:
-                print("    Toggling kill switch OFF (control_1=False)...")
-                res = update_controls(args.base_url, user_token, user_id, device_id, False)
-                print("    OK:", json.dumps(res))
-            except Exception as e:
-                print("    Failed to clear kill switch:", e)
+            if linked:
+                try:
+                    print("    Toggling kill switch OFF (control_1=False)...")
+                    res = update_controls(args.base_url, user_token, user_id, device_id, False)
+                    print("    OK:", json.dumps(res))
+                except Exception as e:
+                    print("    Failed to clear kill switch:", e)
+            else:
+                print("    Skipping kill switch OFF: device not linked to user.")
 
     print("Done.")
 

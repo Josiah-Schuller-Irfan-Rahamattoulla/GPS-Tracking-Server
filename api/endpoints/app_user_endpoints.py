@@ -280,23 +280,31 @@ async def get_device_endpoint(
     device = None
     if access_token:
         dev = get_device(db_conn=db_conn, device_id=device_id)
-        if dev and dev.access_token == access_token:
-            device = dev
-    # User access: allow with valid user_id (and user must own device)
-    if device is None and user_id is not None:
-        device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
-    # Error handling
-    if not device:
-        if access_token:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid access token or device not found",
-            )
+        if dev:
+            if dev.access_token == access_token:
+                device = dev
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid access token",
+                )
         else:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User ID is required",
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found",
             )
+    elif user_id is not None:
+        device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found for user",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token is required",
+        )
     return AppDeviceResponse(
         device_id=device.device_id,
         sms_number=device.sms_number,
