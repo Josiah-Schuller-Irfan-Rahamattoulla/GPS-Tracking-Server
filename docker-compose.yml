@@ -16,6 +16,10 @@ services:
       - ./database/migration_002_allow_multiple_devices_per_sms.sql:/docker-entrypoint-initdb.d/03-multi-device.sql:ro
       - ./database/migration_003_add_geofence_breach_events.sql:/docker-entrypoint-initdb.d/04-geofence-breaches.sql:ro
       - ./database/migration_004_notification_audit_log.sql:/docker-entrypoint-initdb.d/05-notification-audit.sql:ro
+      - ./database/migration_005_device_tracking_mode.sql:/docker-entrypoint-initdb.d/06-tracking-mode.sql:ro
+      - ./database/migration_006_remote_viewing.sql:/docker-entrypoint-initdb.d/07-remote-viewing.sql:ro
+      - ./database/migration_007_remove_unused_tracking_fields.sql:/docker-entrypoint-initdb.d/08-tracking-cleanup.sql:ro
+      - ./database/migration_008_remote_viewing_not_null.sql:/docker-entrypoint-initdb.d/09-remote-viewing-nn.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gpsuser} -d ${POSTGRES_DB:-gps_tracking}"]
       interval: 5s

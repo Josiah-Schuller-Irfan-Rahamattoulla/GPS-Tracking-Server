@@ -320,8 +320,8 @@ async def broadcast_geofence_breach(device_id: int, geofence_id: int, breach_dat
 
 async def broadcast_device_control_response(device_id: int, control_data: dict) -> int:
     """
-    Called when a device responds to a control command.
-    Broadcasts to all users watching this device.
+    Called when app/user updates device controls (e.g. kill switch).
+    Broadcasts to: (1) users watching this device (for UI sync), (2) the device itself (for instant actuation).
     """
     message = {
         "type": "device_control_response",
@@ -329,8 +329,11 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
         "data": control_data,
         "timestamp": int(time.time() * 1000)
     }
-    room = f"user_device_{device_id}"
-    return await manager.broadcast_to_room(room, message)
+    user_room = f"user_device_{device_id}"
+    device_room = f"device_{device_id}"
+    n_users = await manager.broadcast_to_room(user_room, message)
+    n_device = await manager.broadcast_to_room(device_room, message)
+    return n_users + n_device
 
 
 @router.get("/ws/stats/{device_id}")
