@@ -30,6 +30,13 @@
     "nrf-connect.west.path": "C:/ncs/v3.1.1",
     
     // Alternative SDK path format (some versions of the extension use this)
-    "nrf-connect.toolchain.path": "C:/ncs/v3.1.1"
+    "nrf-connect.toolchain.path": "C:/ncs/v3.1.1",
+    "python-envs.pythonProjects": [
+        {
+            "path": "",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
 }
 
