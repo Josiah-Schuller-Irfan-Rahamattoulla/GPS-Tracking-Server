@@ -1,8 +1,10 @@
 import os
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import os
+import psycopg2
 
 from endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints
 from endpoints.authorisation import authorise_device, authorise_user
@@ -24,7 +26,21 @@ app = FastAPI(
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """
+    Simple liveness check plus a quick database connectivity test.
+    """
+    result = {"server": "healthy"}
+
+    dsn = os.getenv("DATABASE_URI")
+    try:
+        conn = psycopg2.connect(dsn=dsn)
+        conn.close()
+        result["database"] = "healthy"
+    except Exception as ex:
+        msg = f"unhealthy: {str(ex)}"
+        result["database"] = msg
+        raise HTTPException(status_code=503, detail=result)
+    return result
 
 # CORS: use CORS_ORIGINS in production (comma-separated). Empty or unset = allow all (dev).
 _cors_origins = os.getenv("CORS_ORIGINS", "").strip()
