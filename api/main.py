@@ -26,17 +26,8 @@ app = FastAPI(
 # Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Simple liveness check plus a quick database connectivity test.
-
-    The API will attempt to open (and immediately close) a connection using
-    ``DATABASE_URI``.  This helps ensure that a Supabase/PostgreSQL instance
-    referenced by the environment is reachable.  If the connection fails the
-    endpoint **does not** return HTTP 200; instead a 503 Service Unavailable
-    error is raised so that orchestrators can mark the container unhealthy.
-
-    The JSON payload still includes ``status`` and, when
-    ``DATABASE_URI`` is set, a ``database`` field indicating the result or
-    error message.
+    """
+    Simple liveness check plus a quick database connectivity test.
     """
     result = {"server": "healthy"}
 
@@ -45,12 +36,9 @@ async def health_check():
         conn = psycopg2.connect(dsn=dsn)
         conn.close()
         result["database"] = "healthy"
-    except Exception as ex:  # pragma: no cover - network/database errors
-        # show error details for debugging
+    except Exception as ex:
         msg = f"unhealthy: {str(ex)}"
         result["database"] = msg
-        # if the database is unreachable, raise an HTTPException so the
-        # status code is 503 instead of 200
         raise HTTPException(status_code=503, detail=result)
     return result
 
