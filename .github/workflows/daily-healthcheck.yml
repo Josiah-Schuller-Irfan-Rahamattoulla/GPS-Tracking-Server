@@ -1,6 +1,6 @@
 name: Daily healthcheck
 
-# run once per day against the public API (plus manual trigger for testing)
+# run once per day against the public API (plus manual trigger for testing) 
 on:
   push:
   schedule:
