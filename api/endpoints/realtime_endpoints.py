@@ -323,12 +323,17 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
     Called when app/user updates device controls (e.g. kill switch).
     Broadcasts to: (1) users watching this device (for UI sync), (2) the device itself (for instant actuation).
     """
-    message = {
+    # Flatten control fields so both web clients and firmware can consume them easily.
+    # control_data is expected to contain keys like control_1..4, control_version, controls_updated_at, etc.
+    message: dict = {
         "type": "device_control_response",
         "device_id": device_id,
+        "timestamp": int(time.time() * 1000),
         "data": control_data,
-        "timestamp": int(time.time() * 1000)
     }
+    for key in ("control_1", "control_2", "control_3", "control_4", "control_version", "controls_updated_at"):
+        if key in control_data:
+            message[key] = control_data[key]
     user_room = f"user_device_{device_id}"
     device_room = f"device_{device_id}"
     n_users = await manager.broadcast_to_room(user_room, message)
