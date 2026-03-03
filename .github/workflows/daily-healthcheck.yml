@@ -15,5 +15,4 @@ jobs:
           set -e
           echo "Checking health endpoint..."
           curl -fS --retry 3 --retry-delay 5 \
-               "https://gpstracking.josiahschuller.au/health" \
-               -o /dev/null
+               "https://gpstracking.josiahschuller.au/health"
