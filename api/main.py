@@ -38,7 +38,7 @@ async def health_check():
     ``DATABASE_URI`` is set, a ``database`` field indicating the result or
     error message.
     """
-    result = {"status": "healthy"}
+    result = {"server": "healthy"}
 
     dsn = os.getenv("DATABASE_URI")
     try:

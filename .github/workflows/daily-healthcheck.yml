@@ -2,7 +2,6 @@ name: Daily healthcheck
 
 # run once per day against the public API
 on:
-  push:
   schedule:
     - cron: '0 0 * * *'   # midnight UTC daily
 
