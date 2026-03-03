@@ -1,7 +1,8 @@
 name: Daily healthcheck
 
-# run once per day against the public API
+# run once per day against the public API (plus manual trigger for testing)
 on:
+  push:
   schedule:
     - cron: '0 0 * * *'   # midnight UTC daily
 
@@ -15,3 +16,8 @@ jobs:
           echo "Checking health endpoint..."
           curl -fS --retry 3 --retry-delay 5 \
                "https://gpstracking.josiahschuller.au/health"
+
+      - name: Force a failure (testing)
+        run: |
+          echo "FORCING JOB FAILURE AS REQUESTED"
+          exit 1
