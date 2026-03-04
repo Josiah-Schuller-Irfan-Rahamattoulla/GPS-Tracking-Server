@@ -96,23 +96,40 @@ def create_device(
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, access_token, sms_number, name, control_1, control_2, control_3, control_4, remote_viewing, last_viewed_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                RETURNING *
-                """,
-                (
-                    device_id,
-                    access_token,
-                    sms_number,
-                    name,
-                    control_1,
-                    control_2,
-                    control_3,
-                    control_4,
-                    remote_viewing,
-                    last_viewed_at,
-                ),
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'devices'
+                """
             )
+            available_columns = {row["column_name"] for row in cursor.fetchall()}
+
+            columns = ["device_id", "access_token", "sms_number"]
+            values = [device_id, access_token, sms_number]
+
+            optional_values = {
+                "name": name,
+                "control_1": control_1,
+                "control_2": control_2,
+                "control_3": control_3,
+                "control_4": control_4,
+                "remote_viewing": remote_viewing,
+                "last_viewed_at": last_viewed_at,
+            }
+
+            for column_name, value in optional_values.items():
+                if column_name in available_columns:
+                    columns.append(column_name)
+                    values.append(value)
+
+            placeholders = ", ".join(["%s"] * len(columns))
+            columns_sql = ", ".join(columns)
+            query = (
+                f"INSERT INTO devices ({columns_sql}) "
+                f"VALUES ({placeholders}) "
+                "RETURNING *"
+            )
+
+            cursor.execute(query, tuple(values))
 
 
 def create_user_device_row(db_conn: PGConnection, user_id: int, device_id: int) -> None:
