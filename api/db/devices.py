@@ -274,9 +274,9 @@ def update_device_controls(
                     return None  # Version conflict
             
             # Build update query
-            updates = []
-            values = []
-            
+            updates: list[str] = []
+            values: list[object] = []
+
             if control_1 is not None:
                 updates.append("control_1 = %s")
                 values.append(control_1)
@@ -292,10 +292,6 @@ def update_device_controls(
             
             if not updates:
                 return device  # No updates, return existing
-            
-            # Increment version and update timestamp
-            updates.append("control_version = COALESCE(control_version, 0) + 1")
-            updates.append("controls_updated_at = CURRENT_TIMESTAMP")
             
             # Build WHERE clause and SET clause safely
             set_clause = ', '.join(updates)
