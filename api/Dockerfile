@@ -31,12 +31,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy source files
-COPY db/ ./db/
-COPY endpoints/ ./endpoints/
-COPY agnss/ ./agnss/
-COPY notifications/ ./notifications/
-COPY main.py .
+# Copy source files (as an installed-style package)
+COPY db/ ./api/db/
+COPY endpoints/ ./api/endpoints/
+COPY agnss/ ./api/agnss/
+COPY notifications/ ./api/notifications/
+COPY main.py ./api/main.py
+
+# Ensure /app is on PYTHONPATH so 'api' is importable
+ENV PYTHONPATH=/app
 
 # Set environment variables (optional)
 ENV PYTHONUNBUFFERED=1
@@ -44,7 +47,7 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Start the app using Gunicorn with Uvicorn workers
-CMD ["gunicorn", "main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "1", "--log-level", "info"]
+CMD ["gunicorn", "api.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "1", "--log-level", "info"]
 
 # Build command:
 # docker build -t gps-tracking .
