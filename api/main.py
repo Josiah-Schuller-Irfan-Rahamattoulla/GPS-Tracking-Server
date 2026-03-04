@@ -6,8 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import psycopg2
 
-from endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints
-from endpoints.authorisation import authorise_device, authorise_user
+from api.endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints
+from api.endpoints.authorisation import authorise_device, authorise_user
 
 # Load .env from api/ dir then project root (so it works from any cwd)
 _api_dir = os.path.abspath(os.path.dirname(__file__))

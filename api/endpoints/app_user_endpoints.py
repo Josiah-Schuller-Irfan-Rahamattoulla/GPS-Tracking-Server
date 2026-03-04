@@ -6,19 +6,19 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, update_device_tracking, delete_all_devices, create_user_device_row, get_device
-from db.gps_data import get_gps_data
-from db.models import GPSData
-from db.users import get_user, get_user_by_email, create_user, verify_user_password
-from db.geofences import (
+from api.db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, update_device_tracking, delete_all_devices, create_user_device_row, get_device
+from api.db.gps_data import get_gps_data
+from api.db.models import GPSData
+from api.db.users import get_user, get_user_by_email, create_user, verify_user_password
+from api.db.geofences import (
     get_geofences_by_user_id,
     create_geofence,
     update_geofence,
     delete_geofence,
 )
-from db.models import GeofenceBreachEvent
+from api.db.models import GeofenceBreachEvent
 from psycopg2.extras import RealDictCursor
-from endpoints.realtime_endpoints import broadcast_device_control_response
+from api.endpoints.realtime_endpoints import broadcast_device_control_response
 
 router = APIRouter()  # Router for authenticated endpoints
 auth_router = APIRouter()  # Router for unauthenticated endpoints (login/signup)
@@ -381,18 +381,37 @@ async def update_device_controls_endpoint(
     Update device control flags (kill switch, etc.).
     Supports optimistic locking via expected_version.
     """
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    
-    updated_device = update_device_controls(
-        db_conn=db_conn,
-        device_id=device_id,
-        user_id=user_id,
-        control_1=controls.control_1,
-        control_2=controls.control_2,
-        control_3=controls.control_3,
-        control_4=controls.control_4,
-        expected_version=controls.expected_version,
-    )
+    database_uri = os.getenv("DATABASE_URI")
+    if not database_uri:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DATABASE_URI not configured",
+        )
+
+    try:
+        db_conn = connect(dsn=database_uri)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database connection failed: {type(e).__name__}: {e}",
+        )
+
+    try:
+        updated_device = update_device_controls(
+            db_conn=db_conn,
+            device_id=device_id,
+            user_id=user_id,
+            control_1=controls.control_1,
+            control_2=controls.control_2,
+            control_3=controls.control_3,
+            control_4=controls.control_4,
+            expected_version=controls.expected_version,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"update_device_controls failed: {type(e).__name__}: {e}",
+        )
     
     if not updated_device:
         raise HTTPException(

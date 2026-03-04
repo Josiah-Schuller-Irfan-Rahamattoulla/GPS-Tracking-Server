@@ -3,7 +3,7 @@ from psycopg2.extras import RealDictCursor
 import hashlib
 import secrets
 
-from db.models import User
+from api.db.models import User
 
 
 def hash_password(password: str, salt: str | None = None) -> tuple[str, str]:

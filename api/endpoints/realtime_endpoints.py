@@ -10,8 +10,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from datetime import datetime
 from psycopg2 import connect
 
-from db.devices import get_device, get_user_ids_for_device
-from db.users import get_user_by_access_token
+from api.db.devices import get_device, get_user_ids_for_device
+from api.db.users import get_user_by_access_token
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

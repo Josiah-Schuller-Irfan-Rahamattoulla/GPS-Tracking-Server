@@ -4,8 +4,8 @@ from fastapi import HTTPException, Request, Query, Security, status
 from fastapi.security import APIKeyHeader
 from psycopg2 import connect
 
-from db.devices import get_device
-from db.users import get_user
+from api.db.devices import get_device
+from api.db.users import get_user
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
@@ -42,8 +42,28 @@ async def authorise_device(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token is required"
         )
 
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    device = get_device(db_conn=db_conn, device_id=device_id)
+    database_uri = os.getenv("DATABASE_URI")
+    if not database_uri:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DATABASE_URI not configured",
+        )
+
+    try:
+        db_conn = connect(dsn=database_uri)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database connection failed: {type(e).__name__}: {e}",
+        )
+
+    try:
+        device = get_device(db_conn=db_conn, device_id=device_id)
+    finally:
+        try:
+            db_conn.close()
+        except Exception:
+            pass
     if device is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Device ID does not exist"
@@ -83,8 +103,28 @@ async def authorise_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Access token is required"
         )
 
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    user = get_user(db_conn=db_conn, user_id=user_id)
+    database_uri = os.getenv("DATABASE_URI")
+    if not database_uri:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="DATABASE_URI not configured",
+        )
+
+    try:
+        db_conn = connect(dsn=database_uri)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database connection failed: {type(e).__name__}: {e}",
+        )
+
+    try:
+        user = get_user(db_conn=db_conn, user_id=user_id)
+    finally:
+        try:
+            db_conn.close()
+        except Exception:
+            pass
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User ID does not exist"

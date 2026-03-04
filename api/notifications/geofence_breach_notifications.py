@@ -4,8 +4,8 @@ import smtplib
 from email.message import EmailMessage
 from typing import Iterable
 
-from db.geofence_breaches import mark_breach_notification_sent
-from db.models import Device, Geofence, GeofenceBreachEvent, User
+from api.db.geofence_breaches import mark_breach_notification_sent
+from api.db.models import Device, Geofence, GeofenceBreachEvent, User
 from psycopg2.extensions import connection as PGConnection
 
 logger = logging.getLogger(__name__)

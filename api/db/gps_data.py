@@ -3,7 +3,7 @@ from datetime import datetime
 from psycopg2.extensions import connection as PGConnection
 from psycopg2.extras import RealDictCursor
 
-from db.models import GPSData
+from api.db.models import GPSData
 
 
 def add_gps_data(

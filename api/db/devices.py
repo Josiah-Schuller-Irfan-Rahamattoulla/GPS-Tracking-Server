@@ -1,7 +1,7 @@
 from psycopg2.extensions import connection as PGConnection
 from psycopg2.extras import RealDictCursor
 
-from db.models import Device
+from api.db.models import Device
 
 
 def get_devices_by_user_id(db_conn: PGConnection, user_id: int) -> list[Device]:

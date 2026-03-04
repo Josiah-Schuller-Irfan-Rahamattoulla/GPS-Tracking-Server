@@ -9,7 +9,7 @@ from math import radians, cos, sin, asin, sqrt
 from psycopg2.extensions import connection as PGConnection
 from psycopg2.extras import RealDictCursor
 
-from db.models import Geofence, GeofenceBreachEvent
+from api.db.models import Geofence, GeofenceBreachEvent
 
 logger = logging.getLogger(__name__)
 

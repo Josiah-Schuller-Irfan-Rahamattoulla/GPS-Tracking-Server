@@ -12,17 +12,17 @@ from psycopg2 import IntegrityError, OperationalError
 from pydantic import BaseModel
 import httpx
 
-from db.devices import create_device, get_device, get_user_ids_for_device
-from db.gps_data import add_gps_data
-from db.geofences import get_geofences_by_user_id
-from db.geofence_breaches import check_geofence_breaches
-from db.models import GeofenceBreachEvent
-from db.users import get_user
-from notifications.geofence_breach_notifications import notify_geofence_breach_events
-from notifications.sms_notifications import notify_geofence_breach_via_sms
-from agnss.cache_store import get_agnss_cache
-from agnss.supl_client import get_supl_assistance_data
-from endpoints.realtime_endpoints import broadcast_location_update, broadcast_geofence_breach
+from api.db.devices import create_device, get_device, get_user_ids_for_device
+from api.db.gps_data import add_gps_data
+from api.db.geofences import get_geofences_by_user_id
+from api.db.geofence_breaches import check_geofence_breaches
+from api.db.models import GeofenceBreachEvent
+from api.db.users import get_user
+from api.notifications.geofence_breach_notifications import notify_geofence_breach_events
+from api.notifications.sms_notifications import notify_geofence_breach_via_sms
+from api.agnss.cache_store import get_agnss_cache
+from api.agnss.supl_client import get_supl_assistance_data
+from api.endpoints.realtime_endpoints import broadcast_location_update, broadcast_geofence_breach
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
