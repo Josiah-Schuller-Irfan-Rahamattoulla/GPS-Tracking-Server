@@ -338,6 +338,10 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
     device_room = f"device_{device_id}"
     n_users = await manager.broadcast_to_room(user_room, message)
     n_device = await manager.broadcast_to_room(device_room, message)
+    logger.info(
+        "device_control_response broadcast device_id=%s n_users=%s n_device=%s",
+        device_id, n_users, n_device,
+    )
     return n_users + n_device
 
 
@@ -346,6 +350,7 @@ async def get_ws_stats(device_id: int):
     """Get connection statistics for a device's WebSocket rooms."""
     return {
         "device_id": device_id,
+        "device_connections": manager.get_room_stats(f"device_{device_id}"),
         "user_listeners": manager.get_room_stats(f"user_device_{device_id}"),
         "geofence_subscribers": manager.get_room_stats(f"geofence_{device_id}"),
     }
