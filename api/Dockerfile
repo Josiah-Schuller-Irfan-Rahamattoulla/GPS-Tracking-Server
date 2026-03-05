@@ -34,6 +34,7 @@ COPY --from=builder /install /usr/local
 # Copy source files (as an installed-style package)
 COPY db/ ./api/db/
 COPY endpoints/ ./api/endpoints/
+COPY services/ ./api/services/
 COPY agnss/ ./api/agnss/
 COPY notifications/ ./api/notifications/
 COPY main.py ./api/main.py
