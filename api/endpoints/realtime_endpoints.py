@@ -162,9 +162,21 @@ async def websocket_device_stream(
     except Exception as e:
         logger.warning(f"Device {device_id}: failed to send welcome controls: {e}")
 
+    # Idle timeout: close if device sends nothing for 2 min (device pings ~every 10s when idle)
+    DEVICE_WS_RECV_TIMEOUT = 120
+
     try:
         while True:
-            data = await websocket.receive_text()
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=DEVICE_WS_RECV_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(f"Device {device_id} WebSocket idle timeout ({DEVICE_WS_RECV_TIMEOUT}s), closing")
+                await manager.disconnect(room, websocket)
+                try:
+                    await websocket.close(code=1000, reason="Idle timeout")
+                except Exception:
+                    pass
+                return
             message = json.loads(data)
             
             if message.get("type") == "ping":
@@ -206,6 +218,20 @@ async def websocket_device_stream(
                     }
                     await manager.broadcast_to_room(f"user_device_{device_id}", broadcast_msg)
                     logger.debug(f"Location update from device {device_id} broadcasted (no persist)")
+
+            elif message.get("type") == "control_applied":
+                # Tracker confirms it applied controls (e.g. kill switch); forward to app/website for feedback
+                broadcast_msg = {
+                    "type": "control_applied",
+                    "device_id": device_id,
+                    "control_1": message.get("control_1"),
+                    "control_2": message.get("control_2"),
+                    "control_3": message.get("control_3"),
+                    "control_4": message.get("control_4"),
+                    "timestamp": int(time.time() * 1000),
+                }
+                await manager.broadcast_to_room(f"user_device_{device_id}", broadcast_msg)
+                logger.debug(f"Device {device_id} control_applied broadcasted to users")
             
             else:
                 logger.warning(f"Unknown message type from device {device_id}: {message.get('type')}")
