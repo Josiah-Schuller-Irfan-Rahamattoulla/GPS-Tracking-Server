@@ -12,15 +12,9 @@ from psycopg2 import IntegrityError, OperationalError
 from pydantic import BaseModel
 import httpx
 
-from api.db.devices import create_device, get_device, get_user_ids_for_device
-from api.db.gps_data import add_gps_data
-from api.db.geofences import get_geofences_by_user_id
-from api.db.geofence_breaches import check_geofence_breaches
-from api.db.models import GeofenceBreachEvent
-from api.db.users import get_user
-from api.notifications.geofence_breach_notifications import notify_geofence_breach_events
-from api.notifications.sms_notifications import notify_geofence_breach_via_sms
+from api.db.devices import create_device, get_device
 from api.agnss.cache_store import get_agnss_cache
+from api.services.device_ingest import ingest_location
 from api.agnss.supl_client import get_supl_assistance_data
 from api.endpoints.realtime_endpoints import broadcast_location_update, broadcast_geofence_breach
 
@@ -39,6 +33,8 @@ class DeviceData(BaseModel):
     speed: float | None = None
     heading: float | None = None
     trip_active: bool | None = None
+    current_draw: float | None = None  # mA from INA700
+    voltage: float | None = None      # V (bus voltage)
     
     @classmethod
     def __get_validators__(cls):
@@ -79,97 +75,30 @@ async def send_gps_data(device_data: DeviceData):
     Endpoint to receive GPS data from a device.
     Supports speed, heading, and trip_active fields from hardware/mobile app.
     If device timestamp is stale (before 2020), use server time so web UI finds it.
-    
-    Now includes server-side geofence breach detection for all users with access to the device.
+    Uses shared ingest (persist + geofence); then broadcasts to WebSocket subscribers.
     """
-    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-
-    ts = device_data.timestamp
-    if ts.year < 2020:
-        ts = datetime.now(timezone.utc)
-
-    # Store GPS data
-    add_gps_data(
-        db_conn=db_conn,
-        device_id=device_data.device_id,
-        timestamp=ts,
-        latitude=device_data.latitude,
-        longitude=device_data.longitude,
-        speed=device_data.speed,
-        heading=device_data.heading,
-        trip_active=device_data.trip_active,
-    )
-
-    # Check geofence breaches for all users who have access to this device
-    user_ids = get_user_ids_for_device(db_conn, device_data.device_id)
-    all_breach_events: list[GeofenceBreachEvent] = []
-    
-    for user_id in user_ids:
-        # Get all active geofences for this user
-        geofences = get_geofences_by_user_id(db_conn, user_id)
-        
-        # Check for breaches
-        breach_events = check_geofence_breaches(
-            db_conn=db_conn,
-            device_id=device_data.device_id,
-            user_id=user_id,
-            latitude=device_data.latitude,
-            longitude=device_data.longitude,
-            geofences=geofences
-        )
-        
-        if breach_events:
-            # Send notifications for this user
-            user = get_user(db_conn, user_id)
-            device = get_device(db_conn, device_data.device_id)
-            geofences_by_id = {g.geofence_id: g for g in geofences}
-            
-            # Send email notifications
-            notify_geofence_breach_events(
-                db_conn=db_conn,
-                events=breach_events,
-                user=user,
-                device=device,
-                geofences_by_id=geofences_by_id
-            )
-            
-            # Send SMS notifications
-            notify_geofence_breach_via_sms(
-                db_conn=db_conn,
-                events=breach_events,
-                user=user,
-                device=device,
-                geofences_by_id=geofences_by_id
-            )
-        
-        all_breach_events.extend(breach_events)
-    
-    # Log breach summary if any occurred
-    if all_breach_events:
-        logger.info(
-            f"GPS data triggered {len(all_breach_events)} geofence breach(es) "
-            f"for device {device_data.device_id}"
-        )
-
-    # Broadcast location update to all users watching this device (WebSocket)
-    location_data = {
-        "device_id": device_data.device_id,
+    payload = {
         "latitude": device_data.latitude,
         "longitude": device_data.longitude,
+        "timestamp": device_data.timestamp,
         "speed": device_data.speed,
         "heading": device_data.heading,
-        "created_at": ts.isoformat()
+        "trip_active": device_data.trip_active,
+        "current_draw": device_data.current_draw,
+        "voltage": device_data.voltage,
     }
-    await broadcast_location_update(device_data.device_id, location_data)
+    location_data, all_breach_events = ingest_location(device_data.device_id, payload)
 
-    # Broadcast geofence breach alerts to subscribers
+    await broadcast_location_update(device_data.device_id, location_data)
+    ts = location_data.get("created_at", "")
+    lat, lon = location_data["latitude"], location_data["longitude"]
     for breach_event in all_breach_events:
         breach_data = {
             "device_id": device_data.device_id,
             "geofence_id": breach_event.geofence_id,
-            "latitude": device_data.latitude,
-            "longitude": device_data.longitude,
-            "breached_at": ts.isoformat()
+            "latitude": lat,
+            "longitude": lon,
+            "breached_at": ts,
         }
         await broadcast_geofence_breach(device_data.device_id, breach_event.geofence_id, breach_data)
 

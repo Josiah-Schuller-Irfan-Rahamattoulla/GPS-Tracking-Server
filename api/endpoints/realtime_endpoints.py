@@ -12,6 +12,7 @@ from psycopg2 import connect
 
 from api.db.devices import get_device, get_user_ids_for_device
 from api.db.users import get_user_by_access_token
+from api.services.device_ingest import ingest_location
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -133,6 +134,34 @@ async def websocket_device_stream(
     room = f"device_{device_id}"
     await manager.connect(room, websocket, {"device_id": device_id, "type": "device"})
 
+    # Send current controls immediately so any updates made while device was disconnected are applied (no control downtime).
+    # Re-fetch from DB so welcome always has the very latest state.
+    try:
+        db_conn_welcome = connect(dsn=os.getenv("DATABASE_URI"))
+        try:
+            device_latest = get_device(db_conn=db_conn_welcome, device_id=device_id)
+        finally:
+            db_conn_welcome.close()
+        welcome_msg = {
+            "type": "device_control_response",
+            "device_id": device_id,
+            "timestamp": int(time.time() * 1000),
+            "data": {},
+        }
+        if device_latest:
+            for key in ("control_1", "control_2", "control_3", "control_4", "control_version", "controls_updated_at"):
+                val = getattr(device_latest, key, None)
+                if val is not None:
+                    welcome_msg[key] = val.isoformat() if hasattr(val, "isoformat") else val
+            # Ensure all four controls are always present so device never merges with stale state
+            for key in ("control_1", "control_2", "control_3", "control_4"):
+                if key not in welcome_msg:
+                    welcome_msg[key] = False
+        await websocket.send_json(welcome_msg)
+        logger.debug(f"Device {device_id}: sent welcome controls on connect (latest from DB)")
+    except Exception as e:
+        logger.warning(f"Device {device_id}: failed to send welcome controls: {e}")
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -145,17 +174,38 @@ async def websocket_device_stream(
                 })
             
             elif message.get("type") == "location_update":
-                # When device sends location, broadcast to all user subscribers
-                broadcast_msg = {
-                    "type": "location_update",
-                    "device_id": device_id,
-                    "data": message.get("data", {}),
-                    "timestamp": int(time.time() * 1000)
-                }
-                # Broadcast to users watching this device
-                user_room = f"user_device_{device_id}"
-                await manager.broadcast_to_room(user_room, broadcast_msg)
-                logger.debug(f"Location update from device {device_id} broadcasted")
+                # Persist and geofence (same as HTTP sendGPSData), then broadcast
+                data = message.get("data") or message
+                if isinstance(data, dict) and data.get("latitude") is not None and data.get("longitude") is not None:
+                    try:
+                        location_data, breach_events = await asyncio.to_thread(
+                            ingest_location, device_id, data
+                        )
+                        await broadcast_location_update(device_id, location_data)
+                        ts = location_data.get("created_at", "")
+                        lat, lon = location_data["latitude"], location_data["longitude"]
+                        for breach_event in breach_events:
+                            breach_data = {
+                                "device_id": device_id,
+                                "geofence_id": breach_event.geofence_id,
+                                "latitude": lat,
+                                "longitude": lon,
+                                "breached_at": ts,
+                            }
+                            await broadcast_geofence_breach(device_id, breach_event.geofence_id, breach_data)
+                        logger.debug(f"Location update from device {device_id} ingested and broadcasted")
+                    except ValueError as e:
+                        logger.warning(f"Device {device_id} location_update invalid: {e}")
+                else:
+                    # No persist: forward as before for backwards compatibility
+                    broadcast_msg = {
+                        "type": "location_update",
+                        "device_id": device_id,
+                        "data": message.get("data", {}),
+                        "timestamp": int(time.time() * 1000)
+                    }
+                    await manager.broadcast_to_room(f"user_device_{device_id}", broadcast_msg)
+                    logger.debug(f"Location update from device {device_id} broadcasted (no persist)")
             
             else:
                 logger.warning(f"Unknown message type from device {device_id}: {message.get('type')}")
@@ -321,10 +371,10 @@ async def broadcast_geofence_breach(device_id: int, geofence_id: int, breach_dat
 async def broadcast_device_control_response(device_id: int, control_data: dict) -> int:
     """
     Called when app/user updates device controls (e.g. kill switch).
-    Broadcasts to: (1) users watching this device (for UI sync), (2) the device itself (for instant actuation).
+    Broadcasts to the device first (for reliable actuation), then to users (UI sync).
+    Optionally sends a second copy to the device after a short delay to improve delivery on flaky links.
     """
     # Flatten control fields so both web clients and firmware can consume them easily.
-    # control_data is expected to contain keys like control_1..4, control_version, controls_updated_at, etc.
     message: dict = {
         "type": "device_control_response",
         "device_id": device_id,
@@ -334,10 +384,16 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
     for key in ("control_1", "control_2", "control_3", "control_4", "control_version", "controls_updated_at"):
         if key in control_data:
             message[key] = control_data[key]
-    user_room = f"user_device_{device_id}"
     device_room = f"device_{device_id}"
-    n_users = await manager.broadcast_to_room(user_room, message)
+    user_room = f"user_device_{device_id}"
+    # Send to device first so the tracker gets the update with priority
     n_device = await manager.broadcast_to_room(device_room, message)
+    n_users = await manager.broadcast_to_room(user_room, message)
+    # Optional duplicate send to device after a short delay (helps on lossy connections)
+    duplicate_delay_ms = int(os.getenv("CONTROL_DUPLICATE_SEND_MS", "0"))
+    if duplicate_delay_ms > 0 and n_device > 0:
+        await asyncio.sleep(duplicate_delay_ms / 1000.0)
+        await manager.broadcast_to_room(device_room, message)
     logger.info(
         "device_control_response broadcast device_id=%s n_users=%s n_device=%s",
         device_id, n_users, n_device,
