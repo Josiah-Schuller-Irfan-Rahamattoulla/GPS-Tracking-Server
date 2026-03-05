@@ -528,6 +528,8 @@ async def test_device_ws_connect_ping_pong():
         pytest.skip("Server not reachable")
     uri = f"{WS_BASE}/v1/ws/devices/{device_id}?token={token}"
     async with websockets.connect(uri, close_timeout=5) as ws:
+        # Server sends welcome (device_control_response) first, then we ping/pong
+        await asyncio.wait_for(ws.recv(), timeout=3)  # consume welcome
         await ws.send(json.dumps({"type": "ping"}))
         reply = await asyncio.wait_for(ws.recv(), timeout=3)
         data = json.loads(reply)
@@ -556,7 +558,11 @@ async def test_device_ws_send_location_update_accepted():
         }
         await ws.send(json.dumps(msg))
         # No reply expected; server just broadcasts. Connection stays open.
-        # Send ping to confirm we're still connected
+        # Consume welcome if still in buffer, then ping to confirm we're still connected
+        try:
+            await asyncio.wait_for(ws.recv(), timeout=0.5)  # optional: drain welcome
+        except asyncio.TimeoutError:
+            pass
         await ws.send(json.dumps({"type": "ping"}))
         reply = await asyncio.wait_for(ws.recv(), timeout=3)
         assert json.loads(reply).get("type") == "pong"

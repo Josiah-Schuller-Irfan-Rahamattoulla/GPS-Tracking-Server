@@ -99,6 +99,8 @@ async def test_websocket_device_accept_and_ping_pong():
 
     uri = f"{BASE_URL}/v1/ws/devices/{device_id}?token={device_token}"
     async with websockets.connect(uri, close_timeout=5) as ws:
+        # Server sends welcome (device_control_response) first, then we ping/pong
+        await asyncio.wait_for(ws.recv(), timeout=3)  # consume welcome
         await ws.send(json.dumps({"type": "ping"}))
         response = await asyncio.wait_for(ws.recv(), timeout=3)
         data = json.loads(response)
