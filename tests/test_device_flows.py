@@ -16,7 +16,7 @@ import json
 import os
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 import requests
@@ -560,6 +560,50 @@ async def test_device_ws_send_location_update_accepted():
         await ws.send(json.dumps({"type": "ping"}))
         reply = await asyncio.wait_for(ws.recv(), timeout=3)
         assert json.loads(reply).get("type") == "pong"
+
+
+@pytest.mark.skipif(not HAS_WEBSOCKETS, reason="websockets package not installed")
+@pytest.mark.asyncio
+async def test_device_ws_location_update_persisted_and_in_gps_data():
+    """Device sends location_update over WS; point is ingested and appears in GET GPSData (MQTT-style)."""
+    try:
+        user_id, user_token, device_id, device_token = _make_user_and_linked_device()
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+    # Unique coords so we can assert on them
+    lat, lon = 52.123456, 0.456789
+    uri = f"{WS_BASE}/v1/ws/devices/{device_id}?token={device_token}"
+    async with websockets.connect(uri, close_timeout=5) as ws:
+        await ws.send(json.dumps({
+            "type": "location_update",
+            "data": {
+                "latitude": lat,
+                "longitude": lon,
+                "speed": 5.0,
+                "heading": 180.0,
+            },
+        }))
+        await asyncio.sleep(0.5)  # allow server to ingest
+    # User fetches GPS data for last 2 minutes; should contain the point we sent
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M:%S")
+    end = (now + timedelta(minutes=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    r = requests.get(
+        f"{BASE}/GPSData",
+        headers={"Access-Token": user_token},
+        params={
+            "user_id": user_id,
+            "device_id": device_id,
+            "start_time": start,
+            "end_time": end,
+        },
+        timeout=10,
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    gps_data = data.get("gps_data") or []
+    matching = [p for p in gps_data if abs(float(p["latitude"]) - lat) < 1e-5 and abs(float(p["longitude"]) - lon) < 1e-5]
+    assert len(matching) >= 1, f"Expected at least one GPS point at {lat},{lon}, got gps_data={gps_data}"
 
 
 # ---------- Full device sequence (smoke) ----------
