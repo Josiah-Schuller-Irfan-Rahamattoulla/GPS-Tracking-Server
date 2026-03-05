@@ -7,7 +7,8 @@ import websockets
 DEVICE_ID = 67
 DEVICE_TOKEN = "sim_device_12345_123456789"
 
-WS_URL = f"ws://127.0.0.1:8000/v1/ws/devices/{DEVICE_ID}?token={DEVICE_TOKEN}"
+# Point at production backend for testing real tracker WS path.
+WS_URL = f"wss://gpstracking.josiahschuller.au/v1/ws/devices/{DEVICE_ID}?token={DEVICE_TOKEN}"
 
 
 async def main() -> None:

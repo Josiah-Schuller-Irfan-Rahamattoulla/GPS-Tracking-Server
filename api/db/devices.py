@@ -206,11 +206,30 @@ def delete_all_devices(db_conn: PGConnection, user_id: int) -> int:
                 (device_ids,)
             )
             
-            # Delete geofences for this user (geofences are user-scoped, not device-scoped)
+            # Delete geofences for this user (geofences are user-scoped). Skip if table does not exist.
             cursor.execute(
-                "DELETE FROM geofences WHERE user_id = %s",
-                (user_id,)
+                """
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'geofences'
+                """
             )
+            if cursor.fetchone():
+                cursor.execute(
+                    "DELETE FROM geofences WHERE user_id = %s",
+                    (user_id,)
+                )
+            # Delete geofence_breaches for these devices if that table exists
+            cursor.execute(
+                """
+                SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'geofence_breaches'
+                """
+            )
+            if cursor.fetchone():
+                cursor.execute(
+                    "DELETE FROM geofence_breaches WHERE device_id = ANY(%s)",
+                    (device_ids,)
+                )
             
             # Delete user-device links
             cursor.execute(

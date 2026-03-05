@@ -30,3 +30,5 @@ last_test_output*.txt
 
 # Binary blobs
 agnss.bin
+
+.md

@@ -61,6 +61,23 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ env.AWS_REGION }}
 
+    # Optional: set ALB idle timeout to 1 hour for WebSockets. Add variable AWS_ALB_NAME (repo Settings → Secrets and variables → Actions → Variables).
+    - name: Set ALB idle timeout for WebSockets
+      if: ${{ vars.AWS_ALB_NAME != '' }}
+      env:
+        ALB_NAME: ${{ vars.AWS_ALB_NAME }}
+        AWS_REGION: ${{ env.AWS_REGION }}
+      run: |
+        ALB_ARN=$(aws elbv2 describe-load-balancers \
+          --names "$ALB_NAME" \
+          --query 'LoadBalancers[0].LoadBalancerArn' \
+          --output text --region "$AWS_REGION")
+        aws elbv2 modify-load-balancer-attributes \
+          --load-balancer-arn "$ALB_ARN" \
+          --attributes Key=idle_timeout.timeout_seconds,Value=3600 \
+          --region "$AWS_REGION"
+        echo "ALB idle timeout set to 3600s (1 hour) for WebSockets"
+
     - name: Deploy to ECS
       env:
         ECS_CLUSTER: ${{ secrets.AWS_ECS_CLUSTER_NAME }}
