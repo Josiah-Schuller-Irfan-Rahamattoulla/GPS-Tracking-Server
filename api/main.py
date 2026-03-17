@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 import psycopg2
 
-from api.endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints
+from api.endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints, debug_endpoints
 from api.endpoints.authorisation import authorise_device, authorise_user
 
 # Load .env from api/ dir then project root (so it works from any cwd)
@@ -87,6 +87,12 @@ app.include_router(
     router=realtime_endpoints.router,
     prefix="/v1",
     tags=["WebSocket real-time streaming"],
+)
+# Debug (no auth; only reports config presence, no secrets)
+app.include_router(
+    router=debug_endpoints.router,
+    prefix="/v1",
+    tags=["Debug / config check"],
 )
 
 
