@@ -7,8 +7,9 @@ import random
 import requests
 import pytest
 from datetime import datetime, timezone
+import os
 
-BASE_URL = "http://localhost:8000/v1"
+BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8000") + "/v1"
 
 def _unique_user():
     """Unique user payload to avoid duplicate key errors across runs."""
