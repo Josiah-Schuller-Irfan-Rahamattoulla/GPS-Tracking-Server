@@ -12,7 +12,7 @@ from psycopg2 import IntegrityError, OperationalError
 from pydantic import BaseModel
 import httpx
 
-from api.db.devices import create_device, get_device
+from api.db.devices import create_device, get_device, ack_device_controls_applied
 from api.agnss.cache_store import get_agnss_cache
 from api.services.device_ingest import ingest_location
 from api.agnss.supl_client import get_supl_assistance_data
@@ -193,6 +193,9 @@ class DeviceControlsResponse(BaseModel):
     control_3: bool | None = None
     control_4: bool | None = None
     control_version: int | None = None
+    last_applied_control_version: int | None = 0
+    command_pending: bool = False
+    command_recovery_interval_ms: int | None = None
     controls_updated_at: str | None = None
     last_viewed_at: str | None = None
     remote_viewing: bool = False
@@ -213,18 +216,21 @@ async def get_device_controls(
             detail="Access token is required"
         )
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    # Verify device and token
-    device = get_device(db_conn=db_conn, device_id=device_id)
-    if not device:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Device not found"
-        )
-    if device.access_token != access_token:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid access token"
-        )
+    try:
+        # Verify device and token
+        device = get_device(db_conn=db_conn, device_id=device_id)
+        if not device:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Device not found"
+            )
+        if device.access_token != access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token"
+            )
+    finally:
+        db_conn.close()
     # Always include remote_viewing, default to False if missing/null
     # Debug: log device type and contents
     print(f"DEBUG getDeviceControls: device type={type(device)}, device={device}")
@@ -232,13 +238,21 @@ async def get_device_controls(
     if remote_viewing_val is None:
         remote_viewing_val = False
     # Manually build response dict and always include remote_viewing
+    control_version_val = int(getattr(device, "control_version", 0) or 0)
+    last_applied_val = int(getattr(device, "last_applied_control_version", 0) or 0)
+    command_pending = control_version_val > last_applied_val
+    command_recovery_interval_ms = int(os.getenv("COMMAND_RECOVERY_INTERVAL_MS", "5000")) if command_pending else None
+
     controls = {
         "device_id": getattr(device, "device_id", None),
         "control_1": getattr(device, "control_1", None),
         "control_2": getattr(device, "control_2", None),
         "control_3": getattr(device, "control_3", None),
         "control_4": getattr(device, "control_4", None),
-        "control_version": getattr(device, "control_version", None),
+        "control_version": control_version_val,
+        "last_applied_control_version": last_applied_val,
+        "command_pending": command_pending,
+        "command_recovery_interval_ms": command_recovery_interval_ms,
         "controls_updated_at": getattr(device, "controls_updated_at", None).isoformat() if getattr(device, "controls_updated_at", None) and hasattr(getattr(device, "controls_updated_at", None), "isoformat") else None,
         "last_viewed_at": getattr(device, "last_viewed_at", None).isoformat() if getattr(device, "last_viewed_at", None) and hasattr(getattr(device, "last_viewed_at", None), "isoformat") else None,
     }
@@ -249,6 +263,53 @@ async def get_device_controls(
         controls["remote_viewing"] = rv
     print(f"DEBUG /getDeviceControls response: {controls}")
     return JSONResponse(content=controls)
+
+
+class DeviceControlAckRequest(BaseModel):
+    device_id: int
+    applied_control_version: int
+
+
+@router.post("/deviceControlAck")
+async def device_control_ack(payload: DeviceControlAckRequest):
+    """
+    Device confirms the latest control revision it has applied.
+    Used to clear command_pending reliably when WS delivery was missed.
+    """
+    if payload.applied_control_version < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="applied_control_version must be >= 0",
+        )
+
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        updated_device = ack_device_controls_applied(
+            db_conn=db_conn,
+            device_id=payload.device_id,
+            applied_control_version=payload.applied_control_version,
+        )
+    finally:
+        db_conn.close()
+
+    if not updated_device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+
+    control_version_val = int(getattr(updated_device, "control_version", 0) or 0)
+    last_applied_val = int(getattr(updated_device, "last_applied_control_version", 0) or 0)
+    command_pending = control_version_val > last_applied_val
+
+    return {
+        "success": True,
+        "message": "Control ACK recorded",
+        "device_id": payload.device_id,
+        "control_version": control_version_val,
+        "last_applied_control_version": last_applied_val,
+        "command_pending": command_pending,
+    }
 
 
 @router.get("/agnss")

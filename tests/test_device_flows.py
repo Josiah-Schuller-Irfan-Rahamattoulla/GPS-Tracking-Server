@@ -290,7 +290,7 @@ def test_get_device_controls_nonexistent_device_401():
 
 
 def test_get_device_controls_success_shape():
-    """getDeviceControls returns device_id, control_1..4, control_version, controls_updated_at, remote_viewing."""
+    """getDeviceControls returns device control metadata including command recovery fields."""
     try:
         device_id, token = _register_device_only()
         r = requests.get(
@@ -309,8 +309,63 @@ def test_get_device_controls_success_shape():
     assert "control_3" in data
     assert "control_4" in data
     assert "control_version" in data
+    assert "last_applied_control_version" in data
+    assert "command_pending" in data
+    assert "command_recovery_interval_ms" in data
     assert "controls_updated_at" in data
     assert "remote_viewing" in data
+
+
+def test_control_revision_ack_clears_command_pending():
+    """User control update increments revision; device ACK marks command_pending false."""
+    try:
+        user_id, user_token, device_id, device_token = _make_user_and_linked_device()
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+
+    # Issue a control command as user.
+    update_res = requests.put(
+        f"{BASE}/devices/{device_id}/controls",
+        headers={"Access-Token": user_token},
+        params={"user_id": user_id},
+        json={
+            "control_1": True,
+            "control_2": True,
+            "control_3": True,
+            "control_4": True,
+        },
+        timeout=10,
+    )
+    assert update_res.status_code == 200, update_res.text
+
+    # Device fetches desired controls and sees pending command.
+    controls_res = requests.get(
+        f"{BASE}/getDeviceControls",
+        params={"device_id": device_id},
+        headers={"Access-Token": device_token},
+        timeout=10,
+    )
+    assert controls_res.status_code == 200, controls_res.text
+    controls = controls_res.json()
+    desired_version = int(controls.get("control_version") or 0)
+    assert desired_version >= 1
+    assert controls.get("command_pending") is True
+
+    # Device ACKs applied revision.
+    ack_res = requests.post(
+        f"{BASE}/deviceControlAck",
+        headers={"Access-Token": device_token},
+        json={
+            "device_id": device_id,
+            "applied_control_version": desired_version,
+        },
+        timeout=10,
+    )
+    assert ack_res.status_code == 200, ack_res.text
+    ack_body = ack_res.json()
+    assert ack_body.get("success") is True
+    assert int(ack_body.get("last_applied_control_version") or 0) >= desired_version
+    assert ack_body.get("command_pending") is False
 
 
 def _make_user_and_linked_device():

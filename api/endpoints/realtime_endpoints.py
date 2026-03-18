@@ -10,7 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from datetime import datetime
 from psycopg2 import connect
 
-from api.db.devices import get_device, get_user_ids_for_device
+from api.db.devices import get_device, get_user_ids_for_device, ack_device_controls_applied
 from api.db.users import get_user_by_access_token
 from api.services.device_ingest import ingest_location
 
@@ -149,7 +149,15 @@ async def websocket_device_stream(
             "data": {},
         }
         if device_latest:
-            for key in ("control_1", "control_2", "control_3", "control_4", "control_version", "controls_updated_at"):
+            for key in (
+                "control_1",
+                "control_2",
+                "control_3",
+                "control_4",
+                "control_version",
+                "last_applied_control_version",
+                "controls_updated_at",
+            ):
                 val = getattr(device_latest, key, None)
                 if val is not None:
                     welcome_msg[key] = val.isoformat() if hasattr(val, "isoformat") else val
@@ -157,6 +165,16 @@ async def websocket_device_stream(
             for key in ("control_1", "control_2", "control_3", "control_4"):
                 if key not in welcome_msg:
                     welcome_msg[key] = False
+            control_version_val = int(getattr(device_latest, "control_version", 0) or 0)
+            last_applied_val = int(getattr(device_latest, "last_applied_control_version", 0) or 0)
+            welcome_msg["control_version"] = control_version_val
+            welcome_msg["last_applied_control_version"] = last_applied_val
+            welcome_msg["command_pending"] = control_version_val > last_applied_val
+            welcome_msg["command_recovery_interval_ms"] = (
+                int(os.getenv("COMMAND_RECOVERY_INTERVAL_MS", "5000"))
+                if welcome_msg["command_pending"]
+                else None
+            )
         await websocket.send_json(welcome_msg)
         logger.debug(f"Device {device_id}: sent welcome controls on connect (latest from DB)")
     except Exception as e:
@@ -221,6 +239,26 @@ async def websocket_device_stream(
 
             elif message.get("type") == "control_applied":
                 # Tracker confirms it applied controls (e.g. kill switch); forward to app/website for feedback
+                applied_control_version = message.get("applied_control_version")
+                command_pending = None
+                if applied_control_version is not None:
+                    try:
+                        applied_control_version = int(applied_control_version)
+                        if applied_control_version >= 0:
+                            db_conn_ack = connect(dsn=os.getenv("DATABASE_URI"))
+                            try:
+                                updated_device = ack_device_controls_applied(
+                                    db_conn=db_conn_ack,
+                                    device_id=device_id,
+                                    applied_control_version=applied_control_version,
+                                )
+                            finally:
+                                db_conn_ack.close()
+                            if updated_device:
+                                command_pending = int(updated_device.control_version or 0) > int(updated_device.last_applied_control_version or 0)
+                    except Exception as e:
+                        logger.warning(f"Device {device_id} control_applied persistence failed: {e}")
+
                 broadcast_msg = {
                     "type": "control_applied",
                     "device_id": device_id,
@@ -228,6 +266,8 @@ async def websocket_device_stream(
                     "control_2": message.get("control_2"),
                     "control_3": message.get("control_3"),
                     "control_4": message.get("control_4"),
+                    "applied_control_version": applied_control_version,
+                    "command_pending": command_pending,
                     "timestamp": int(time.time() * 1000),
                 }
                 await manager.broadcast_to_room(f"user_device_{device_id}", broadcast_msg)
@@ -407,7 +447,17 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
         "timestamp": int(time.time() * 1000),
         "data": control_data,
     }
-    for key in ("control_1", "control_2", "control_3", "control_4", "control_version", "controls_updated_at"):
+    for key in (
+        "control_1",
+        "control_2",
+        "control_3",
+        "control_4",
+        "control_version",
+        "last_applied_control_version",
+        "command_pending",
+        "command_recovery_interval_ms",
+        "controls_updated_at",
+    ):
         if key in control_data:
             message[key] = control_data[key]
     device_room = f"device_{device_id}"

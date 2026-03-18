@@ -45,6 +45,8 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
                 # Guarantee remote_viewing is always present and never None
                 if "remote_viewing" not in device or device["remote_viewing"] is None:
                     device["remote_viewing"] = False
+                if "last_applied_control_version" not in device or device["last_applied_control_version"] is None:
+                    device["last_applied_control_version"] = 0
                 return Device(**device)
             return None
 
@@ -77,6 +79,7 @@ def create_device(
     control_4: bool | None = None,
     remote_viewing: bool = False,
     last_viewed_at = None,
+    last_applied_control_version: int = 0,
 ) -> None:
     """
     Create a new device in the database.
@@ -114,6 +117,7 @@ def create_device(
                 "control_4": control_4,
                 "remote_viewing": remote_viewing,
                 "last_viewed_at": last_viewed_at,
+                "last_applied_control_version": last_applied_control_version,
             }
 
             for column_name, value in optional_values.items():
@@ -311,23 +315,62 @@ def update_device_controls(
             
             if not updates:
                 return device  # No updates, return existing
+
+            # Any control mutation is a new desired command revision.
+            updates.append("control_version = COALESCE(control_version, 0) + 1")
+            updates.append("controls_updated_at = CURRENT_TIMESTAMP")
             
             # Build WHERE clause and SET clause safely
             set_clause = ', '.join(updates)
-            where_clause = ' AND '.join(["d.device_id = ud.device_id", "d.device_id = %s", "ud.user_id = %s"])
+            where_parts = ["d.device_id = ud.device_id", "d.device_id = %s", "ud.user_id = %s"]
+            where_values: list[object] = [device_id, user_id]
             
             if expected_version is not None:
-                where_clause += " AND d.control_version = %s"
-                values.append(expected_version)
+                where_parts.append("COALESCE(d.control_version, 0) = %s")
+                where_values.append(expected_version)
+            where_clause = ' AND '.join(where_parts)
             
             query = (
                 f"UPDATE devices d SET {set_clause} "
                 f"FROM users_devices ud WHERE {where_clause} RETURNING d.*"
             )
-            values.extend([device_id, user_id])
+            values.extend(where_values)
             
             cursor.execute(query, values)
             updated = cursor.fetchone()
+            return Device(**updated) if updated else None
+
+
+def ack_device_controls_applied(
+    db_conn: PGConnection,
+    device_id: int,
+    applied_control_version: int,
+) -> Device | None:
+    """
+    Persist tracker-applied control revision for reliable command reconciliation.
+
+    :param db_conn: Database connection object
+    :param device_id: Device ID
+    :param applied_control_version: Latest control_version applied by device
+    :return: Updated Device if successful, None if device not found
+    """
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                UPDATE devices
+                SET last_applied_control_version = GREATEST(COALESCE(last_applied_control_version, 0), %s)
+                WHERE device_id = %s
+                RETURNING *
+                """,
+                (applied_control_version, device_id),
+            )
+            updated = cursor.fetchone()
+            if updated is not None and (
+                "last_applied_control_version" not in updated
+                or updated["last_applied_control_version"] is None
+            ):
+                updated["last_applied_control_version"] = 0
             return Device(**updated) if updated else None
 
 
