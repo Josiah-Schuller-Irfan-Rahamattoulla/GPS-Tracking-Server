@@ -34,6 +34,9 @@ async def health_check():
     dsn = os.getenv("DATABASE_URI")
     try:
         conn = psycopg2.connect(dsn=dsn)
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.close()
         conn.close()
         result["database"] = "healthy"
     except Exception as ex:
