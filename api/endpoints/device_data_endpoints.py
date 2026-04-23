@@ -70,13 +70,33 @@ class DeviceDataResponse(BaseModel):
 
 
 @router.post("/sendGPSData", response_model=DeviceDataResponse)
-async def send_gps_data(device_data: DeviceData):
+async def send_gps_data(
+    device_data: DeviceData,
+    access_token: str = Security(access_token_header),
+):
     """
     Endpoint to receive GPS data from a device.
     Supports speed, heading, and trip_active fields from hardware/mobile app.
     If device timestamp is stale (before 2020), use server time so web UI finds it.
     Uses shared ingest (persist + geofence); then broadcasts to WebSocket subscribers.
     """
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token is required",
+        )
+
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        device = get_device(db_conn=db_conn, device_id=device_data.device_id)
+        if not device or device.access_token != access_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid access token",
+            )
+    finally:
+        db_conn.close()
+
     payload = {
         "latitude": device_data.latitude,
         "longitude": device_data.longitude,

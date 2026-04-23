@@ -30,9 +30,36 @@ def add_gps_data(
     with db_conn:
         with db_conn.cursor() as cursor:
             cursor.execute(
-                """INSERT INTO gps_data (device_id, time, latitude, longitude, speed, heading, trip_active) 
-                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-                (device_id, timestamp, latitude, longitude, speed, heading, trip_active),
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'gps_data'
+                """
+            )
+            available_columns = {row[0] for row in cursor.fetchall()}
+
+            columns = ["device_id", "time", "latitude", "longitude"]
+            values = [device_id, timestamp, latitude, longitude]
+
+            optional_columns = {
+                "speed": speed,
+                "heading": heading,
+                "trip_active": trip_active,
+            }
+
+            for column_name, value in optional_columns.items():
+                if column_name in available_columns:
+                    columns.append(column_name)
+                    values.append(value)
+
+            placeholders = ", ".join(["%s"] * len(columns))
+            columns_sql = ", ".join(columns)
+            cursor.execute(
+                f"""
+                INSERT INTO gps_data ({columns_sql})
+                VALUES ({placeholders})
+                """,
+                tuple(values),
             )
 
 

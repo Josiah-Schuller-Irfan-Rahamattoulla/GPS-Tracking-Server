@@ -2,13 +2,15 @@
 Baseline test suite to lock down current API behavior.
 Run with: pytest tests/test_baseline.py
 """
+import os
 import time
 import random
 import requests
 import pytest
 from datetime import datetime, timezone
 
-BASE_URL = "http://localhost:8000/v1"
+HTTP_BASE = os.getenv("TEST_BASE_URL", "http://localhost:8000").rstrip("/")
+BASE_URL = f"{HTTP_BASE}/v1"
 
 def _unique_user():
     """Unique user payload to avoid duplicate key errors across runs."""
