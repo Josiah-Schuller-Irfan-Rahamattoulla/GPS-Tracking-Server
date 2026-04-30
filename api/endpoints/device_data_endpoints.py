@@ -17,6 +17,7 @@ from api.agnss.cache_store import get_agnss_cache
 from api.services.device_ingest import ingest_location
 from api.agnss.supl_client import get_supl_assistance_data
 from api.endpoints.realtime_endpoints import broadcast_location_update, broadcast_geofence_breach
+from api.nrfcloud_location import auth_bearer_token, build_location_url
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
 
@@ -357,18 +358,18 @@ async def get_agnss_data(
 
     # Try 1: nRF Cloud (if API key configured)
     if _provider_allows("NRF_CLOUD"):
-        nrf_cloud_api_key = os.getenv("NRF_CLOUD_API_KEY")
+        nrf_cloud_api_key = auth_bearer_token()
         if not nrf_cloud_api_key:
             if agnss_provider == "NRF_CLOUD":
                 raise HTTPException(
                     status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="NRF_CLOUD_API_KEY not configured",
+                    detail="nRF Cloud Location Services not configured (set NRFCLOUD_OAT + slugs, or legacy NRF_CLOUD_API_KEY)",
                 )
         else:
             try:
                 logger.info("Attempting A-GNSS from nRF Cloud for device %d", device_id)
                 device_identifier = f"nrf-{device_id}"
-                url = "https://api.nrfcloud.com/v1/location/agps"
+                url = build_location_url("agps")
                 auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
                 params: dict[str, str | float] = {"deviceIdentifier": device_identifier}
                 if lat is not None and lon is not None:

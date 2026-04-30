@@ -13,6 +13,8 @@ import httpx
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+from api.nrfcloud_location import auth_bearer_token, build_location_url
+
 
 class CellInfo(BaseModel):
     """Single cell tower information"""
@@ -59,7 +61,7 @@ async def get_nrf_cloud_location(cells: List[CellInfo], api_key: str) -> CellLoc
         "lte": lte_cells
     }
     
-    url = "https://api.nrfcloud.com/v1/location/cell"
+    url = build_location_url("cell")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -206,9 +208,9 @@ async def get_cell_location(
     for candidate in provider_order:
         try:
             if candidate == "nrf_cloud":
-                api_key = os.getenv("NRF_CLOUD_API_KEY")
+                api_key = auth_bearer_token()
                 if not api_key:
-                    errors.append("NRF_CLOUD_API_KEY not configured")
+                    errors.append("NRFCLOUD_OAT/NRFCLOUD_ORG_SLUG/NRFCLOUD_PROJECT_SLUG not configured (or legacy NRF_CLOUD_API_KEY missing)")
                     continue
                 return await get_nrf_cloud_location(request.cells, api_key)
 

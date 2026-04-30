@@ -15,14 +15,11 @@ from fastapi.responses import Response
 
 import asyncio
 
-# In-memory cache for evaluation token
-_evaluation_token = None
-_evaluation_token_expiry = None
-
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+from api.nrfcloud_location import auth_bearer_token, build_location_url
 
 class CellLocationHint(BaseModel):
     """Cell location hint for A-GNSS server (optional)"""
@@ -63,89 +60,101 @@ async def request_agnss_from_nrf_cloud(
     Raises:
         HTTPException on API errors
     """
-    async def get_evaluation_token():
-        global _evaluation_token, _evaluation_token_expiry
-        if _evaluation_token and _evaluation_token_expiry:
-            # Check expiry (buffer 60s)
-            import time, jwt
-            try:
-                payload = jwt.decode(_evaluation_token, options={"verify_signature": False})
-                if payload.get("exp", 0) > int(time.time()) + 60:
-                    return _evaluation_token
-            except Exception:
-                pass
-        # Fetch new token
-        url = "https://api.nrfcloud.com/v1/account/service-evaluation-token"
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(url)
-            if resp.status_code == 200:
-                token = resp.json().get("token")
-                _evaluation_token = token
-                # Parse expiry
-                try:
-                    import jwt
-                    payload = jwt.decode(token, options={"verify_signature": False})
-                    _evaluation_token_expiry = payload.get("exp")
-                except Exception:
-                    _evaluation_token_expiry = None
-                return token
-            else:
-                raise HTTPException(status_code=500, detail="Failed to fetch nRF Cloud evaluation token")
+    try:
+        # Prefer the new OAT-based auth; fall back to legacy NRF_CLOUD_API_KEY during migration.
+        key = (api_key or auth_bearer_token() or "").strip()
+        if not key:
+            raise HTTPException(
+                status_code=500,
+                detail="A-GNSS: nRF Cloud not configured (set NRFCLOUD_OAT + slugs, or legacy NRF_CLOUD_API_KEY)",
+            )
 
-    async def request_agnss_from_nrf_cloud(
-        api_key: Optional[str] = None,
-        lat: Optional[float] = None,
-        lon: Optional[float] = None,
-        accuracy: Optional[int] = None
-    ) -> bytes:
-        try:
-            # Use provided API key, or fetch evaluation token if missing/invalid
-            key = api_key or os.getenv("NRF_CLOUD_API_KEY")
-            if not key or key.strip() == "":
-                key = await get_evaluation_token()
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                url = "https://api.nrfcloud.com/v1/agnss/latest"
-                params = {}
-                if lat is not None and lon is not None:
-                    params["lat"] = lat
-                    params["lon"] = lon
-                    if accuracy:
-                        params["accuracy"] = accuracy
-                    logger.info(f"A-GNSS: Using position hint lat={lat:.6f} lon={lon:.6f} accuracy={accuracy}m")
-                else:
-                    logger.info("A-GNSS: No position hint, requesting default ephemeris")
-                headers = {"Authorization": f"Bearer {key}"}
-                logger.debug(f"Requesting A-GNSS from nRF Cloud with params: {params}")
-                response = await client.get(url, params=params, headers=headers)
-                logger.info(f"A-GNSS nRF Cloud response status: {response.status_code}")
-                logger.info(f"A-GNSS nRF Cloud response headers: {dict(response.headers)}")
-                if response.status_code == 200:
-                    logger.info(f"A-GNSS data received: {len(response.content)} bytes")
-                    logger.info(f"A-GNSS data (first 32 bytes): {response.content[:32].hex()}")
-                    return response.content
-                elif response.status_code == 401:
-                    # Try fetching a new evaluation token and retry once
-                    logger.warning("A-GNSS: API key invalid, attempting to fetch evaluation token...")
-                    key = await get_evaluation_token()
-                    headers = {"Authorization": f"Bearer {key}"}
-                    response = await client.get(url, params=params, headers=headers)
-                    logger.info(f"A-GNSS nRF Cloud response status (retry): {response.status_code}")
-                    if response.status_code == 200:
-                        logger.info(f"A-GNSS data received: {len(response.content)} bytes (retry)")
-                        logger.info(f"A-GNSS data (first 32 bytes): {response.content[:32].hex()} (retry)")
-                        return response.content
-                    raise HTTPException(status_code=401, detail="A-GNSS: Invalid nRF Cloud API key (after retry)")
-                elif response.status_code == 429:
+        def _parse_content_range_total(header_value: str | None) -> int | None:
+            if not header_value:
+                return None
+            try:
+                # e.g. "bytes 0-2200/12456"
+                parts = header_value.strip().split()
+                if len(parts) != 2 or parts[0].lower() != "bytes":
+                    return None
+                range_part = parts[1]
+                if "/" not in range_part:
+                    return None
+                _, total_part = range_part.split("/", 1)
+                if total_part == "*":
+                    return None
+                return int(total_part)
+            except (ValueError, IndexError):
+                return None
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Location Services GNSS assistance endpoint.
+            # nRF Cloud returns data in chunks controlled by the Range header.
+            url = build_location_url("agnss")
+
+            # NOTE: The GNSS assistance API supports cell-derived hints via mcc/mnc/tac/eci + type 8.
+            # We currently only have lat/lon hints from our cell-location provider, so we request
+            # default assistance (types 1,2,3,4,6,7,9) and ignore lat/lon here.
+            if lat is not None and lon is not None:
+                logger.info("A-GNSS: lat/lon hint provided but GNSS assistance requires cell IDs; requesting default assistance")
+            else:
+                logger.info("A-GNSS: requesting default assistance")
+
+            headers = {
+                "Authorization": f"Bearer {key}",
+                "Accept": "application/octet-stream",
+                "Content-Type": "application/json",
+            }
+
+            chunks: list[bytes] = []
+            total_received = 0
+            total_size: int | None = None
+
+            # First chunk.
+            response = await client.post(
+                url,
+                json={},
+                headers={**headers, "Range": "bytes=0-16383"},
+            )
+            logger.info(f"A-GNSS nRF Cloud response status: {response.status_code}")
+            if response.status_code not in (200, 206):
+                if response.status_code == 401:
+                    raise HTTPException(status_code=401, detail="A-GNSS: Invalid nRF Cloud token (OAT/API key)")
+                if response.status_code == 429:
                     raise HTTPException(status_code=429, detail="A-GNSS: Rate limit exceeded")
-                else:
-                    error_msg = f"A-GNSS: nRF Cloud returned {response.status_code}: {response.text}"
-                    logger.warning(error_msg)
-                    raise HTTPException(status_code=response.status_code, detail=error_msg)
-        except httpx.TimeoutException:
-            raise HTTPException(status_code=504, detail="A-GNSS: nRF Cloud request timeout")
-        except Exception as e:
-            logger.error(f"A-GNSS request error: {e}")
-            raise HTTPException(status_code=500, detail=f"A-GNSS: {str(e)}")
+                raise HTTPException(
+                    status_code=response.status_code,
+                    detail=f"A-GNSS: nRF Cloud returned {response.status_code}: {response.text}",
+                )
+
+            chunks.append(response.content)
+            total_received += len(response.content)
+            total_size = _parse_content_range_total(response.headers.get("Content-Range"))
+
+            # Remaining chunks (if nRF Cloud tells us the total size).
+            while total_size is not None and total_received < total_size:
+                next_start = total_received
+                next_resp = await client.post(
+                    url,
+                    json={},
+                    headers={**headers, "Range": f"bytes={next_start}-"},
+                )
+                if next_resp.status_code not in (200, 206) or not next_resp.content:
+                    break
+                chunks.append(next_resp.content)
+                total_received += len(next_resp.content)
+
+            data = b"".join(chunks)
+            logger.info(f"A-GNSS data received: {len(data)} bytes")
+            logger.debug(f"A-GNSS data (first 32 bytes): {data[:32].hex()}")
+            return data
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="A-GNSS: nRF Cloud request timeout")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"A-GNSS request error: {e}")
+        raise HTTPException(status_code=500, detail=f"A-GNSS: {str(e)}")
 
 
 @router.get("/agnss")
