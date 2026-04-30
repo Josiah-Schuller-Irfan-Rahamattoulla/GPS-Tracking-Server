@@ -26,6 +26,36 @@ services:
       timeout: 5s
       retries: 5
 
+  # Database migrations runner (idempotent SQL)
+  migrate:
+    image: postgres:16-alpine
+    container_name: gps-tracking-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gpsuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gpspassword}
+      POSTGRES_DB: ${POSTGRES_DB:-gps_tracking}
+    volumes:
+      - ./database:/migrations:ro
+    entrypoint: ["/bin/sh", "-lc"]
+    command: >
+      set -euo pipefail;
+      echo "Running DB migrations...";
+      export PGPASSWORD="${POSTGRES_PASSWORD}";
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/gps_tracking_database.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_001_add_features.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_002_allow_multiple_devices_per_sms.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_003_add_geofence_breach_events.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_004_notification_audit_log.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_005_device_tracking_mode.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_006_remote_viewing.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_007_remove_unused_tracking_fields.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_008_remote_viewing_not_null.sql;
+      psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_009_command_recovery_ack.sql;
+      echo "Migrations complete.";
+
   # FastAPI Server
   api:
     build:
@@ -56,6 +86,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
