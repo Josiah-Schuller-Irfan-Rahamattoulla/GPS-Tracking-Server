@@ -356,6 +356,23 @@ def ack_device_controls_applied(
     """
     with db_conn:
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            # Backward compatibility: older schemas may not yet have the
+            # last_applied_control_version column. In that case, treat ACK as a no-op.
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'devices'
+                """
+            )
+            available_columns = {row["column_name"] for row in cursor.fetchall()}
+            if "last_applied_control_version" not in available_columns:
+                cursor.execute("SELECT * FROM devices WHERE device_id = %s", (device_id,))
+                row = cursor.fetchone()
+                if row is not None and (row.get("last_applied_control_version") is None):
+                    row["last_applied_control_version"] = 0
+                return Device(**row) if row else None
+
             cursor.execute(
                 """
                 UPDATE devices

@@ -12,6 +12,20 @@ from datetime import datetime, timezone
 HTTP_BASE = os.getenv("TEST_BASE_URL", "http://localhost:8000").rstrip("/")
 BASE_URL = f"{HTTP_BASE}/v1"
 
+def _post(url: str, **kwargs) -> requests.Response:
+    try:
+        return requests.post(url, **kwargs)
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+
+
+def _get(url: str, **kwargs) -> requests.Response:
+    try:
+        return requests.get(url, **kwargs)
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+
+
 def _unique_user():
     """Unique user payload to avoid duplicate key errors across runs."""
     ts = int(time.time())
@@ -41,7 +55,7 @@ def _unique_device():
 def auth_token():
     """Create a test user and return auth token and user_id."""
     user = _unique_user()
-    response = requests.post(f"{BASE_URL}/signup", json=user, timeout=10)
+    response = _post(f"{BASE_URL}/signup", json=user, timeout=10)
     assert response.status_code == 200, f"Signup failed: {response.text}"
     data = response.json()
     return data["access_token"], data["user_id"]
@@ -54,11 +68,11 @@ def test_device(auth_token):
     device = _unique_device()
 
     # Register device
-    response = requests.post(f"{BASE_URL}/registerDevice", json=device, timeout=10)
+    response = _post(f"{BASE_URL}/registerDevice", json=device, timeout=10)
     assert response.status_code == 200, f"Device registration failed: {response.text}"
 
     # Link device to user (access_token proves ownership)
-    response = requests.post(
+    response = _post(
         f"{BASE_URL}/registerDeviceToUser",
         headers={"Access-Token": access_token},
         params={"user_id": user_id},
@@ -79,7 +93,7 @@ def test_user_signup():
         "name": "Signup Test User",
         "password": "TestPass123!",
     }
-    response = requests.post(f"{BASE_URL}/signup", json=user_data, timeout=10)
+    response = _post(f"{BASE_URL}/signup", json=user_data, timeout=10)
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -96,7 +110,7 @@ def test_device_registration():
         "sms_number": f"+1777{ts % 10000000:07d}",
         "name": "Reg Test Device",
     }
-    response = requests.post(f"{BASE_URL}/registerDevice", json=device_data, timeout=10)
+    response = _post(f"{BASE_URL}/registerDevice", json=device_data, timeout=10)
     assert response.status_code == 200
     data = response.json()
     assert data.get("success") is True or "device_id" in data or "message" in data
@@ -116,7 +130,7 @@ def test_gps_data_ingestion(auth_token, test_device):
         "trip_active": False,
     }
 
-    response = requests.post(
+    response = _post(
         f"{BASE_URL}/sendGPSData",
         headers={"Access-Token": device_access_token},
         json=gps_data,
@@ -140,7 +154,7 @@ def test_geofence_creation(auth_token):
         "enabled": True,
     }
 
-    response = requests.post(
+    response = _post(
         f"{BASE_URL}/geofences",
         headers={"Access-Token": access_token},
         params={"user_id": user_id},
@@ -167,7 +181,7 @@ def test_geofence_breach_detection(auth_token, test_device):
         "enabled": True,
     }
 
-    response = requests.post(
+    response = _post(
         f"{BASE_URL}/geofences",
         headers={"Access-Token": access_token},
         params={"user_id": user_id},
@@ -187,7 +201,7 @@ def test_geofence_breach_detection(auth_token, test_device):
         "trip_active": False,
     }
 
-    response = requests.post(
+    response = _post(
         f"{BASE_URL}/sendGPSData",
         headers={"Access-Token": device_access_token},
         json=gps_data,
@@ -196,7 +210,7 @@ def test_geofence_breach_detection(auth_token, test_device):
     assert response.status_code == 200
 
     # Check for breach events (list may be empty if breach only on transition)
-    response = requests.get(
+    response = _get(
         f"{BASE_URL}/geofence-breach-events",
         headers={"Access-Token": access_token},
         params={"user_id": user_id},

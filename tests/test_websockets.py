@@ -86,6 +86,8 @@ async def test_websocket_device_reject_invalid_token():
         assert e.code == 1008 or e.code is not None
     except websockets.exceptions.InvalidStatus as e:
         assert e.response.status_code != 101  # not a successful upgrade
+    except OSError:
+        pytest.skip("Server not reachable")
 
 
 @pytest.mark.skipif(not HAS_WEBSOCKETS, reason="websockets package not installed")

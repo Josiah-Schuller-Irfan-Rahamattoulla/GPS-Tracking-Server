@@ -338,6 +338,10 @@ async def get_agnss_data(
     device_id: int = Query(..., description="Device ID"),
     lat: float | None = Query(None, ge=-90, le=90, description="Approximate latitude for tailored A-GNSS"),
     lon: float | None = Query(None, ge=-180, le=180, description="Approximate longitude for tailored A-GNSS"),
+    mcc: int | None = Query(None, ge=0, le=999, description="Serving cell MCC (for filtered ephemeris)"),
+    mnc: int | None = Query(None, ge=0, le=999, description="Serving cell MNC (for filtered ephemeris)"),
+    tac: int | None = Query(None, ge=0, le=65535, description="Serving cell TAC (for filtered ephemeris)"),
+    eci: int | None = Query(None, ge=0, le=268435455, description="Serving cell ECI (LTE cell id)"),
     access_token: str = Security(access_token_header)
 ):
     """
@@ -388,14 +392,30 @@ async def get_agnss_data(
         else:
             try:
                 logger.info("Attempting A-GNSS from nRF Cloud for device %d", device_id)
-                device_identifier = f"nrf-{device_id}"
-                url = build_location_url("agps")
+                url = build_location_url("agnss")
                 auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
-                params: dict[str, str | float] = {"deviceIdentifier": device_identifier}
-                if lat is not None and lon is not None:
-                    params["latitude"] = lat
-                    params["longitude"] = lon
-                    logger.info("A-GNSS with position hint: lat=%.6f lon=%.6f", lat, lon)
+                # Proper GNSS assistance uses serving cell identity (type 8) for filtered ephemeris.
+                # If we don't have cell IDs, fall back to default assistance (still helpful).
+                body: dict[str, object] = {}
+
+                have_cell_ids = (mcc is not None and mnc is not None and tac is not None and eci is not None)
+                if have_cell_ids:
+                    body = {
+                        "mcc": mcc,
+                        "mnc": mnc,
+                        "tac": tac,
+                        "eci": eci,
+                        "filteredEphemeris": True,
+                        # Default assistance types plus "location" (8) derived from cell.
+                        "types": [1, 2, 3, 4, 6, 7, 8, 9],
+                    }
+                    logger.info("A-GNSS using cell IDs: mcc=%d mnc=%d tac=%d eci=%d", mcc, mnc, tac, eci)
+                elif lat is not None and lon is not None:
+                    # We keep lat/lon for backwards compatibility but do not currently forward it
+                    # upstream; the GNSS assistance API expects cell IDs for tailored results.
+                    logger.info("A-GNSS lat/lon hint provided but no cell IDs; requesting default assistance")
+                else:
+                    logger.info("A-GNSS requesting default assistance (no hints)")
 
                 def _parse_content_range(header_value: str | None) -> int | None:
                     """Parse Content-Range header and return total size, or None."""
@@ -416,10 +436,15 @@ async def get_agnss_data(
                         return None
 
                 async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.get(
+                    response = await client.post(
                         url,
-                        params=params,
-                        headers={**auth_headers, "Range": "bytes=0-16383"},
+                        json=body,
+                        headers={
+                            **auth_headers,
+                            "Accept": "application/octet-stream",
+                            "Content-Type": "application/json",
+                            "Range": "bytes=0-16383",
+                        },
                     )
 
                     if response.status_code in (200, 206):
@@ -431,10 +456,15 @@ async def get_agnss_data(
                         while total_size is not None and total_received < total_size:
                             next_start = total_received
                             range_header = f"bytes={next_start}-"
-                            next_response = await client.get(
+                            next_response = await client.post(
                                 url,
-                                params=params,
-                                headers={**auth_headers, "Range": range_header},
+                                json=body,
+                                headers={
+                                    **auth_headers,
+                                    "Accept": "application/octet-stream",
+                                    "Content-Type": "application/json",
+                                    "Range": range_header,
+                                },
                             )
                             if next_response.status_code not in (200, 206):
                                 break

@@ -20,7 +20,14 @@ def _get_gps_data_columns(db_conn: PGConnection) -> set[str]:
     if _gps_data_columns_cache is not None:
         return _gps_data_columns_cache
 
-    with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+    # Some unit tests use a lightweight fake connection/cursor that does not accept
+    # cursor_factory or return dict rows. Support both shapes.
+    try:
+        cursor_cm = db_conn.cursor(cursor_factory=RealDictCursor)
+    except TypeError:
+        cursor_cm = db_conn.cursor()
+
+    with cursor_cm as cursor:
         cursor.execute(
             """
             SELECT column_name
@@ -28,7 +35,14 @@ def _get_gps_data_columns(db_conn: PGConnection) -> set[str]:
             WHERE table_schema = 'public' AND table_name = 'gps_data'
             """
         )
-        _gps_data_columns_cache = {row["column_name"] for row in cursor.fetchall()}
+        rows = cursor.fetchall()
+        cols: set[str] = set()
+        for row in rows:
+            if isinstance(row, dict):
+                cols.add(row.get("column_name"))  # type: ignore[arg-type]
+            else:
+                cols.add(row[0])
+        _gps_data_columns_cache = {c for c in cols if c}
     return _gps_data_columns_cache
 
 
