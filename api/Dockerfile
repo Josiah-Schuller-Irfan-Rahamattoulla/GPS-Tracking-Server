@@ -37,6 +37,7 @@ COPY endpoints/ ./api/endpoints/
 COPY services/ ./api/services/
 COPY agnss/ ./api/agnss/
 COPY notifications/ ./api/notifications/
+COPY nrfcloud_location.py ./api/nrfcloud_location.py
 COPY main.py ./api/main.py
 
 # Ensure /app is on PYTHONPATH so 'api' is importable
