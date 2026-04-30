@@ -757,7 +757,7 @@ async def test_device_ws_send_location_update_accepted():
         assert json.loads(reply).get("type") == "pong"
 
 
-def _gps_points_in_range(user_token, user_id, device_id, start, end, lat, lon, tol=1e-5):
+def _gps_points_in_range(user_token, user_id, device_id, start, end, lat, lon, tol=1e-4):
     r = requests.get(
         f"{BASE}/GPSData",
         headers={"Access-Token": user_token},

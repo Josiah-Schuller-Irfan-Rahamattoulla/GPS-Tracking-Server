@@ -70,6 +70,12 @@ def test_agnss_endpoint_returns_binary_data():
     except requests.exceptions.ConnectionError:
         pytest.skip("Server not reachable")
 
+    if r.status_code == 503:
+        pytest.skip(
+            "A-GNSS provider unavailable (expected if NRFCLOUD_OAT / org+project slugs "
+            "are not configured in the deployed environment)"
+        )
+
     assert r.status_code == 200, f"{r.status_code}: {r.text[:300]}"
     # A-GNSS payload should be binary and non-trivial in size.
     assert len(r.content) >= 512, f"Unexpectedly small A-GNSS payload: {len(r.content)} bytes"

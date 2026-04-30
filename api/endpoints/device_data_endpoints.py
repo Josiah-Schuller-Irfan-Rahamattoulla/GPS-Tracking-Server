@@ -405,7 +405,11 @@ async def get_agnss_data(
                         "mnc": mnc,
                         "tac": tac,
                         "eci": eci,
-                        "filteredEphemeris": True,
+                        # nRF Cloud API field name is `filtered` (not `filteredEphemeris`).
+                        # When true, returns ephemeris for only satellites in view (up to 16).
+                        "filtered": True,
+                        # Mask angle for filtered ephemeris. Default documented value is 5 degrees.
+                        "mask": 5,
                         # Default assistance types plus "location" (8) derived from cell.
                         "types": [1, 2, 3, 4, 6, 7, 8, 9],
                     }

@@ -113,6 +113,8 @@ async def request_agnss_from_nrf_cloud(
             # First chunk.
             response = await client.post(
                 url,
+                # Basic request: allow nRF Cloud to return default assistance.
+                # (If you want filtered ephemeris you must send mcc/mnc/tac/eci + filtered/mask here.)
                 json={},
                 headers={**headers, "Range": "bytes=0-16383"},
             )
