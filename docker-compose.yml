@@ -34,10 +34,16 @@ services:
     container_name: gps-tracking-api
     environment:
       DATABASE_URI: postgresql://${POSTGRES_USER:-gpsuser}:${POSTGRES_PASSWORD:-gpspassword}@db:5432/${POSTGRES_DB:-gps_tracking}
-      NRF_CLOUD_API_KEY: ${NRF_CLOUD_API_KEY:-xu3FbQqmnbc663jlDdewFEgYgQRYrKs5}
+      # nRF Cloud Location Services (new auth): Memfault Organization Auth Token (OAT) + org/project slugs.
+      NRFCLOUD_OAT: ${NRFCLOUD_OAT}
+      NRFCLOUD_ORG_SLUG: ${NRFCLOUD_ORG_SLUG}
+      NRFCLOUD_PROJECT_SLUG: ${NRFCLOUD_PROJECT_SLUG}
+      # Legacy (deprecated) auth (kept only for migration/back-compat in code).
+      NRF_CLOUD_API_KEY: ${NRF_CLOUD_API_KEY:-}
       # A-GNSS provider: empty = try nRF Cloud first, fallback to SUPL; or set to NRF_CLOUD or SUPL
       AGNSS_PROVIDER: ${AGNSS_PROVIDER:-}
-      SUPL_DEMO: ${SUPL_DEMO:-1}
+      # SUPL demo mode returns fake A-GNSS data; keep disabled by default.
+      SUPL_DEMO: ${SUPL_DEMO:-0}
       # Cell location provider: nrf_cloud, google, here, or auto
       CELL_LOCATION_PROVIDER: ${CELL_LOCATION_PROVIDER:-auto}
       GOOGLE_GEOLOCATION_API_KEY: ${GOOGLE_GEOLOCATION_API_KEY}

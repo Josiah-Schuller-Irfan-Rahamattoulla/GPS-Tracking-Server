@@ -157,6 +157,7 @@ class AppDeviceResponse(BaseModel):
     control_3: bool | None
     control_4: bool | None
     control_version: int | None = None
+    last_applied_control_version: int | None = 0
     controls_updated_at: datetime | None = None
 
 
@@ -217,6 +218,7 @@ async def get_user_devices(
             control_3=device.control_3,
             control_4=device.control_4,
             control_version=device.control_version,
+            last_applied_control_version=device.last_applied_control_version,
             controls_updated_at=device.controls_updated_at,
         )
         for device in devices
@@ -316,6 +318,7 @@ async def get_device_endpoint(
         control_3=device.control_3,
         control_4=device.control_4,
         control_version=device.control_version,
+        last_applied_control_version=device.last_applied_control_version,
         controls_updated_at=device.controls_updated_at,
     )
 
@@ -359,6 +362,7 @@ async def update_device_tracking_endpoint(
         control_3=updated_device.control_3,
         control_4=updated_device.control_4,
         control_version=updated_device.control_version,
+        last_applied_control_version=updated_device.last_applied_control_version,
         controls_updated_at=updated_device.controls_updated_at,
     )
 
@@ -426,6 +430,8 @@ async def update_device_controls_endpoint(
         "control_3": updated_device.control_3,
         "control_4": updated_device.control_4,
         "control_version": updated_device.control_version,
+        "last_applied_control_version": updated_device.last_applied_control_version,
+        "command_pending": int(updated_device.control_version or 0) > int(updated_device.last_applied_control_version or 0),
         "controls_updated_at": updated_device.controls_updated_at.isoformat() if updated_device.controls_updated_at else None,
     })
     
@@ -438,6 +444,7 @@ async def update_device_controls_endpoint(
         control_3=updated_device.control_3,
         control_4=updated_device.control_4,
         control_version=updated_device.control_version,
+        last_applied_control_version=updated_device.last_applied_control_version,
         controls_updated_at=updated_device.controls_updated_at,
     )
 

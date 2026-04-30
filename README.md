@@ -78,7 +78,7 @@ A FastAPI-based GPS tracking server with PostgreSQL database support for managin
 
 6. **Set up the database (OPTIONAL)**
    - Create a PostgreSQL database
-   - Run the SQL schema from `database/gps_tracking_database.sql`, then migrations in `database/migration_001_*` through `migration_004_*` in order.
+   - Run the SQL schema from `database/gps_tracking_database.sql`, then migrations in `database/migration_001_*` through `migration_009_*` in order.
    - For device-in-vehicle flow and production readiness, see [docs/DEVICE_AND_PRODUCTION_READINESS.md](docs/DEVICE_AND_PRODUCTION_READINESS.md).
 
 ### Running the Application

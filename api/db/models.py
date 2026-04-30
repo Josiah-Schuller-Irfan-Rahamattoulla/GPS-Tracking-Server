@@ -16,6 +16,7 @@ class Device(BaseModel):
     control_3: bool | None
     control_4: bool | None
     control_version: int | None = None
+    last_applied_control_version: int | None = 0
     controls_updated_at: datetime | None = None
 
 
