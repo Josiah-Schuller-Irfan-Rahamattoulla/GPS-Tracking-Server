@@ -16,7 +16,11 @@ from api.db.devices import create_device, get_device, ack_device_controls_applie
 from api.agnss.cache_store import get_agnss_cache
 from api.services.device_ingest import ingest_location
 from api.agnss.supl_client import get_supl_assistance_data
-from api.endpoints.realtime_endpoints import broadcast_location_update, broadcast_geofence_breach
+from api.endpoints.realtime_endpoints import (
+    broadcast_location_update,
+    broadcast_geofence_breach,
+    broadcast_control_applied_to_users,
+)
 from api.nrfcloud_location import auth_bearer_token, build_location_url
 
 access_token_header = APIKeyHeader(name="Access-Token", auto_error=False)
@@ -322,6 +326,8 @@ async def device_control_ack(payload: DeviceControlAckRequest):
     control_version_val = int(getattr(updated_device, "control_version", 0) or 0)
     last_applied_val = int(getattr(updated_device, "last_applied_control_version", 0) or 0)
     command_pending = control_version_val > last_applied_val
+
+    await broadcast_control_applied_to_users(payload.device_id, updated_device)
 
     return {
         "success": True,

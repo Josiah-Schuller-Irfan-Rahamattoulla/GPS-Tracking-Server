@@ -1,8 +1,6 @@
 # Device Access Token vs User ID Issue: GPS Tracking Backend
 
-## Summary
-
-Device requests to `/v1/devices/{device_id}` using only the device access token are returning `{"detail":"User ID is required"}`. This prevents devices from fetching their configuration as intended.
+## Device requests to `/v1/devices/{device_id}` using only the device access token are returning `{"detail":"User ID is required"}`. This prevents devices from fetching their configuration as intended.
 
 ## Observed Behavior
 - **Device request:**
@@ -26,10 +24,16 @@ Device requests to `/v1/devices/{device_id}` using only the device access token 
   - Allow user access with a valid user access token and `user_id`.
 - After patching and restarting the container, the issue persisted, suggesting the code change did not take effect or another layer is enforcing the requirement.
 
-## Next Steps
-1. Rebuild the backend container to ensure the code change is active.
-2. Double-check for any other middleware or validation enforcing `user_id`.
-3. Confirm device-only requests succeed after rebuild.
+## App (fixed 2026-05-23)
+
+- Mobile app poll now uses `GET /v1/devices/{device_id}?user_id=` instead of downloading the full `GET /v1/devices` list every ~15s.
+- User requests: **user** `Access-Token` + `user_id` query (as implemented in `get_device_endpoint`).
+- Device firmware should use `GET /v1/getDeviceControls?device_id=` with the **device** token, not `/v1/devices/{id}`.
+
+## Next Steps (device token on `/devices/{id}`)
+
+1. Optional: add `GET /v1/deviceConfig?device_id=` for firmware if not already routed.
+2. Rebuild production if an older image still returns 400 without `user_id` for user app calls.
 
 ---
 

@@ -52,6 +52,32 @@ def _make_user_and_device():
     return user_id, access_token, device["device_id"]
 
 
+def test_get_single_device_by_id():
+    """GET /v1/device and /v1/devices/{id} return one device for the user."""
+    try:
+        user_id, access_token, device_id = _make_user_and_device()
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+    headers = {"Access-Token": access_token}
+    for url, params in (
+        (f"{BASE}/device", {"user_id": user_id, "device_id": device_id}),
+        (f"{BASE}/devices/{device_id}", {"user_id": user_id}),
+    ):
+        r = requests.get(url, headers=headers, params=params, timeout=10)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["device_id"] == device_id
+        assert "control_version" in body
+        assert "last_applied_control_version" in body
+    r404 = requests.get(
+        f"{BASE}/device",
+        headers=headers,
+        params={"user_id": user_id, "device_id": 999999999},
+        timeout=10,
+    )
+    assert r404.status_code == 404
+
+
 def test_link_device_requires_correct_access_token():
     """Linking a device with wrong pairing code returns 403."""
     try:

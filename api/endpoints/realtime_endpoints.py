@@ -241,6 +241,7 @@ async def websocket_device_stream(
                 # Tracker confirms it applied controls (e.g. kill switch); forward to app/website for feedback
                 applied_control_version = message.get("applied_control_version")
                 command_pending = None
+                updated_device = None
                 if applied_control_version is not None:
                     try:
                         applied_control_version = int(applied_control_version)
@@ -270,6 +271,11 @@ async def websocket_device_stream(
                     "command_pending": command_pending,
                     "timestamp": int(time.time() * 1000),
                 }
+                if updated_device is not None:
+                    broadcast_msg["control_version"] = int(updated_device.control_version or 0)
+                    broadcast_msg["last_applied_control_version"] = int(
+                        updated_device.last_applied_control_version or 0
+                    )
                 await manager.broadcast_to_room(f"user_device_{device_id}", broadcast_msg)
                 logger.debug(f"Device {device_id} control_applied broadcasted to users")
             
@@ -475,6 +481,43 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
         device_id, n_users, n_device,
     )
     return n_users + n_device
+
+
+async def broadcast_control_applied_to_users(device_id: int, device) -> int:
+    """
+  Notify app/website subscribers when the tracker ACKs a control revision (HTTP or WS).
+  Without this, HTTP-only deviceControlAck clears the DB but the mobile app stays PEND.
+    """
+    if device is None:
+        return 0
+    control_version_val = int(getattr(device, "control_version", 0) or 0)
+    last_applied_val = int(getattr(device, "last_applied_control_version", 0) or 0)
+    command_pending = control_version_val > last_applied_val
+    message = {
+        "type": "control_applied",
+        "device_id": device_id,
+        "control_1": getattr(device, "control_1", None),
+        "control_2": getattr(device, "control_2", None),
+        "control_3": getattr(device, "control_3", None),
+        "control_4": getattr(device, "control_4", None),
+        "applied_control_version": last_applied_val,
+        "control_version": control_version_val,
+        "last_applied_control_version": last_applied_val,
+        "command_pending": command_pending,
+        "timestamp": int(time.time() * 1000),
+    }
+    user_room = f"user_device_{device_id}"
+    count = await manager.broadcast_to_room(user_room, message)
+    if count > 0:
+        logger.info(
+            "control_applied broadcast device_id=%s n_users=%s version=%s applied=%s pending=%s",
+            device_id,
+            count,
+            control_version_val,
+            last_applied_val,
+            command_pending,
+        )
+    return count
 
 
 @router.get("/ws/stats/{device_id}")

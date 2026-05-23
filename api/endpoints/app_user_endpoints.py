@@ -195,6 +195,33 @@ async def register_device_to_user(
     return {"success": True, "message": "Device registered to user successfully"}
 
 
+def _app_device_response(device) -> AppDeviceResponse:
+    return AppDeviceResponse(
+        device_id=device.device_id,
+        sms_number=device.sms_number,
+        name=device.name,
+        remote_viewing=device.remote_viewing,
+        last_viewed_at=device.last_viewed_at,
+        control_1=device.control_1,
+        control_2=device.control_2,
+        control_3=device.control_3,
+        control_4=device.control_4,
+        control_version=device.control_version,
+        last_applied_control_version=device.last_applied_control_version,
+        controls_updated_at=device.controls_updated_at,
+    )
+
+
+def _fetch_device_for_user(db_conn, device_id: int, user_id: int):
+    device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found for user",
+        )
+    return _app_device_response(device)
+
+
 @router.get("/devices", response_model=list[AppDeviceResponse])
 async def get_user_devices(
     user_id: int = Query(..., description="User ID"),
@@ -206,23 +233,19 @@ async def get_user_devices(
 
     devices = get_devices_by_user_id(db_conn=db_conn, user_id=user_id)
 
-    return [
-        AppDeviceResponse(
-            device_id=device.device_id,
-            sms_number=device.sms_number,
-            name=device.name,
-            remote_viewing=device.remote_viewing,
-            last_viewed_at=device.last_viewed_at,
-            control_1=device.control_1,
-            control_2=device.control_2,
-            control_3=device.control_3,
-            control_4=device.control_4,
-            control_version=device.control_version,
-            last_applied_control_version=device.last_applied_control_version,
-            controls_updated_at=device.controls_updated_at,
-        )
-        for device in devices
-    ]
+    return [_app_device_response(device) for device in devices]
+
+
+@router.get("/device", response_model=AppDeviceResponse)
+async def get_device_query_endpoint(
+    device_id: int = Query(..., description="Device ID"),
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+    Get one device by query params (preferred for mobile poll — avoids path routing quirks).
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    return _fetch_device_for_user(db_conn, device_id=device_id, user_id=user_id)
 
 
 class AppGPSDataResponse(BaseModel):
@@ -266,61 +289,18 @@ async def get_device_gps_data(
     )
 
 
-from fastapi import Header
-
 @router.get("/devices/{device_id}", response_model=AppDeviceResponse)
 async def get_device_endpoint(
     device_id: int,
-    user_id: int | None = Query(None, description="User ID"),
-    access_token: str = Header(None, alias="Access-Token")
+    user_id: int = Query(..., description="User ID"),
 ):
     """
-    Get a single device by ID. Allows access by user ownership or valid device access token.
+    Get a single device by ID for an authenticated app user.
+    User auth is enforced by router-level authorise_user (Access-Token + user_id).
+    Device firmware should use GET /v1/deviceConfig?device_id= (device token).
     """
     db_conn = connect(dsn=os.getenv("DATABASE_URI"))
-    # Device access: allow with valid device access token, no user_id required
-    device = None
-    if access_token:
-        dev = get_device(db_conn=db_conn, device_id=device_id)
-        if dev:
-            if dev.access_token == access_token:
-                device = dev
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Invalid access token",
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Device not found",
-            )
-    elif user_id is not None:
-        device = get_device_by_user(db_conn=db_conn, device_id=device_id, user_id=user_id)
-        if not device:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Device not found for user",
-            )
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access token is required",
-        )
-    return AppDeviceResponse(
-        device_id=device.device_id,
-        sms_number=device.sms_number,
-        name=device.name,
-        remote_viewing=device.remote_viewing,
-        last_viewed_at=device.last_viewed_at,
-        control_1=device.control_1,
-        control_2=device.control_2,
-        control_3=device.control_3,
-        control_4=device.control_4,
-        control_version=device.control_version,
-        last_applied_control_version=device.last_applied_control_version,
-        controls_updated_at=device.controls_updated_at,
-    )
+    return _fetch_device_for_user(db_conn, device_id=device_id, user_id=user_id)
 
 
 class DeviceTrackingUpdate(BaseModel):
