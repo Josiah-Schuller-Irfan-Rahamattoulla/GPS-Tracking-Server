@@ -237,6 +237,26 @@ async def websocket_device_stream(
                     await manager.broadcast_to_room(f"user_device_{device_id}", broadcast_msg)
                     logger.debug(f"Location update from device {device_id} broadcasted (no persist)")
 
+            elif message.get("type") == "power_telemetry":
+                broadcast_msg = {
+                    "type": "power_telemetry",
+                    "device_id": device_id,
+                    "charger_status": message.get("charger_status"),
+                    "pgood": message.get("pgood"),
+                    "voltage": message.get("voltage"),
+                    "current_draw": message.get("current_draw"),
+                    "timestamp": int(time.time() * 1000),
+                }
+                count = await manager.broadcast_to_room(
+                    f"user_device_{device_id}", broadcast_msg
+                )
+                if count > 0:
+                    logger.debug(
+                        "power_telemetry broadcast device_id=%s users=%s",
+                        device_id,
+                        count,
+                    )
+
             elif message.get("type") == "control_applied":
                 # Tracker confirms it applied controls (e.g. kill switch); forward to app/website for feedback
                 applied_control_version = message.get("applied_control_version")

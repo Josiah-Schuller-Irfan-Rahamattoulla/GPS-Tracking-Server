@@ -30,6 +30,14 @@
 - User requests: **user** `Access-Token` + `user_id` query (as implemented in `get_device_endpoint`).
 - Device firmware should use `GET /v1/getDeviceControls?device_id=` with the **device** token, not `/v1/devices/{id}`.
 
+## Firmware: settled state ignores controls (2026-05-23)
+
+**Cause:** WS stays up (pongs only), HTTP `getDeviceControls` poll disabled while `device_ws_connected`.
+
+**Fix:** Reflash firmware with `CONTROL_SETTLED_STATE_FIX.md` changes (HTTP fallback every 90s with coordinated WS pause; pongs no longer keep zombie WS alive).
+
+---
+
 ## Next Steps (device token on `/devices/{id}`)
 
 1. Optional: add `GET /v1/deviceConfig?device_id=` for firmware if not already routed.
