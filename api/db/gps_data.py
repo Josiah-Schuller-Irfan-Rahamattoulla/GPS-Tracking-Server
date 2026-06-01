@@ -85,7 +85,21 @@ def add_gps_data(
 
         placeholders = ", ".join(["%s"] * len(insert_cols))
         columns_sql = ", ".join(insert_cols)
-        query = f"INSERT INTO gps_data ({columns_sql}) VALUES ({placeholders})"
+        upsert_sets: list[str] = [
+            "latitude = EXCLUDED.latitude",
+            "longitude = EXCLUDED.longitude",
+        ]
+        if "speed" in cols:
+            upsert_sets.append("speed = EXCLUDED.speed")
+        if "heading" in cols:
+            upsert_sets.append("heading = EXCLUDED.heading")
+        if "trip_active" in cols:
+            upsert_sets.append("trip_active = EXCLUDED.trip_active")
+
+        query = (
+            f"INSERT INTO gps_data ({columns_sql}) VALUES ({placeholders}) "
+            f"ON CONFLICT (device_id, time) DO UPDATE SET {', '.join(upsert_sets)}"
+        )
 
         with db_conn.cursor() as cursor:
             cursor.execute(query, tuple(values))
