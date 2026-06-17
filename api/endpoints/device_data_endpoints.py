@@ -534,3 +534,135 @@ async def get_agnss_data(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="A-GNSS unavailable: no provider returned data",
     )
+
+
+async def request_pgps_from_nrf_cloud(
+    prediction_count: int,
+    prediction_period_min: int,
+    gps_day: int | None = None,
+    gps_time_of_day: int | None = None,
+) -> bytes | None:
+    """Fetch P-GPS binary from nRF Cloud Location Services (two-step REST flow)."""
+    nrf_cloud_api_key = auth_bearer_token()
+    if not nrf_cloud_api_key:
+        return None
+
+    params: dict[str, int] = {
+        "predictionCount": prediction_count,
+        "predictionIntervalMinutes": prediction_period_min,
+    }
+    if gps_day is not None:
+        params["startGpsDay"] = gps_day
+    if gps_time_of_day is not None:
+        params["startGpsTimeOfDaySeconds"] = gps_time_of_day
+
+    url = build_location_url("pgps")
+    auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        meta = await client.get(
+            url,
+            params=params,
+            headers={**auth_headers, "Accept": "application/json"},
+        )
+        if meta.status_code != 200:
+            logger.warning(
+                "nRF Cloud P-GPS meta returned %d: %s",
+                meta.status_code,
+                meta.text[:500],
+            )
+            return None
+
+        try:
+            payload = meta.json()
+        except ValueError:
+            logger.warning("nRF Cloud P-GPS meta response is not JSON")
+            return None
+
+        host = payload.get("host")
+        path = payload.get("path")
+        if not host or not path:
+            logger.warning("nRF Cloud P-GPS meta missing host/path: %s", payload)
+            return None
+
+        if host.startswith("http://") or host.startswith("https://"):
+            download_url = f"{host.rstrip('/')}/{path.lstrip('/')}"
+        else:
+            download_url = f"https://{host.rstrip('/')}/{path.lstrip('/')}"
+
+        dl = await client.get(download_url, headers=auth_headers)
+        if dl.status_code != 200:
+            logger.warning(
+                "nRF Cloud P-GPS download returned %d from %s",
+                dl.status_code,
+                download_url,
+            )
+            return None
+
+        logger.info("P-GPS from nRF Cloud: %d bytes", len(dl.content))
+        return dl.content
+
+
+@router.get("/pgps")
+async def get_pgps_data(
+    device_id: int = Query(..., description="Device ID"),
+    prediction_count: int = Query(..., ge=2, le=84, description="Number of P-GPS predictions"),
+    prediction_period_min: int = Query(
+        120, ge=120, le=240, description="Minutes covered by each prediction"
+    ),
+    gps_day: int | None = Query(None, ge=0, description="GPS day for prediction set start"),
+    gps_time_of_day: int | None = Query(
+        None, ge=0, description="GPS time-of-day (seconds) for prediction set start"
+    ),
+    access_token: str = Security(access_token_header),
+):
+    """
+    P-GPS proxy: fetches predicted ephemeris from nRF Cloud and returns raw binary
+    for nrf_cloud_pgps_process_update() on the device.
+    """
+    if not access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access token is required",
+        )
+
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    device = get_device(db_conn=db_conn, device_id=device_id)
+    if not device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+    if device.access_token != access_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid access token",
+        )
+
+    if prediction_count % 2 != 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="prediction_count must be even",
+        )
+
+    pgps_data = await request_pgps_from_nrf_cloud(
+        prediction_count=prediction_count,
+        prediction_period_min=prediction_period_min,
+        gps_day=gps_day,
+        gps_time_of_day=gps_time_of_day,
+    )
+
+    if not pgps_data:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="P-GPS unavailable: nRF Cloud did not return data",
+        )
+
+    return Response(
+        content=pgps_data,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Length": str(len(pgps_data)),
+            "X-PGPS-Source": "nRF Cloud",
+        },
+    )
