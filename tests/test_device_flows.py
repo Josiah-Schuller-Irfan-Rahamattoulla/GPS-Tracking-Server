@@ -639,6 +639,70 @@ def test_agnss_with_lat_lon():
     assert r.status_code in (200, 503)
 
 
+# ---------- P-GPS (device auth) ----------
+
+
+def test_pgps_requires_auth():
+    """GET /pgps without Access-Token returns 401."""
+    try:
+        r = requests.get(
+            f"{BASE}/pgps",
+            params={"device_id": 1, "prediction_count": 8, "prediction_period_min": 120},
+            timeout=10,
+        )
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+    assert r.status_code == 401
+
+
+def test_pgps_invalid_token_401():
+    """GET /pgps with wrong token returns 401."""
+    try:
+        device_id, _ = _register_device_only()
+        r = requests.get(
+            f"{BASE}/pgps",
+            params={"device_id": device_id, "prediction_count": 8, "prediction_period_min": 120},
+            headers={"Access-Token": "wrong"},
+            timeout=10,
+        )
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+    assert r.status_code == 401
+
+
+def test_pgps_success_or_503():
+    """GET /pgps with valid device returns 200 (binary) or 503 if no nRF Cloud provider."""
+    try:
+        device_id, token = _register_device_only()
+        r = requests.get(
+            f"{BASE}/pgps",
+            params={"device_id": device_id, "prediction_count": 8, "prediction_period_min": 120},
+            headers={"Access-Token": token},
+            timeout=60,
+        )
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+    assert r.status_code in (200, 503)
+    if r.status_code == 200:
+        assert r.headers.get("Content-Type", "").startswith("application/octet-stream")
+        assert len(r.content) >= 2048
+
+
+def test_pgps_odd_prediction_count_400():
+    """prediction_count must be even."""
+    try:
+        device_id, token = _register_device_only()
+        r = requests.get(
+            f"{BASE}/pgps",
+            params={"device_id": device_id, "prediction_count": 7, "prediction_period_min": 120},
+            headers={"Access-Token": token},
+            timeout=15,
+        )
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+    assert r.status_code == 400
+
+
 # ---------- Cell location (device auth) ----------
 
 
