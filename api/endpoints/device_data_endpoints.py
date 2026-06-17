@@ -663,6 +663,7 @@ async def get_pgps_data(
         media_type="application/octet-stream",
         headers={
             "Content-Length": str(len(pgps_data)),
+            "Connection": "close",
             "X-PGPS-Source": "nRF Cloud",
         },
     )
