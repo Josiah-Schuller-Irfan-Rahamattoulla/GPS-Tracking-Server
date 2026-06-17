@@ -82,3 +82,49 @@ def test_pgps_endpoint_returns_binary_data():
     assert r.headers.get("X-PGPS-Source") == "nRF Cloud"
     # 8 predictions ~= 16 KB plus header; reject empty/tiny error bodies.
     assert len(r.content) >= 2048, f"Unexpectedly small P-GPS payload: {len(r.content)} bytes"
+
+
+def test_pgps_provisioned_device():
+    """
+    Live smoke test using a real device (same env vars as agnss_dump.py).
+
+    Not run in CI. Locally:
+      RUN_LIVE_PGPS_TEST=1 pytest tests/test_pgps.py::test_pgps_provisioned_device -v
+    Optional: TEST_BASE_URL, TEST_DEVICE_ID, TEST_DEVICE_TOKEN
+    """
+    if not os.getenv("RUN_LIVE_PGPS_TEST"):
+        pytest.skip("Set RUN_LIVE_PGPS_TEST=1 to run against a provisioned device")
+
+    base = os.getenv("TEST_BASE_URL", "https://gpstracking.josiahschuller.au").rstrip("/")
+    device_id = int(os.getenv("TEST_DEVICE_ID", "67"))
+    token = os.getenv("TEST_DEVICE_TOKEN", "sim_device_12345_123456789")
+
+    try:
+        r = requests.get(
+            f"{base}/v1/pgps",
+            params={
+                "device_id": device_id,
+                "prediction_count": 8,
+                "prediction_period_min": 120,
+            },
+            headers={"Access-Token": token},
+            timeout=90,
+        )
+    except requests.exceptions.ConnectionError:
+        pytest.skip("Server not reachable")
+
+    if r.status_code == 404:
+        pytest.fail(
+            "GET /v1/pgps returned 404 - deploy latest GPS-Tracking-Server to production "
+            "(Build and Deploy to AWS workflow) before running this test"
+        )
+
+    if r.status_code == 503:
+        pytest.skip(
+            "P-GPS provider unavailable (check NRFCLOUD_OAT / org+project slugs on server)"
+        )
+
+    assert r.status_code == 200, f"{r.status_code}: {r.text[:300]}"
+    assert r.headers.get("Content-Type", "").startswith("application/octet-stream")
+    assert r.headers.get("X-PGPS-Source") == "nRF Cloud"
+    assert len(r.content) >= 2048, f"Unexpectedly small P-GPS payload: {len(r.content)} bytes"
