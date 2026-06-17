@@ -139,6 +139,8 @@ def ingest_location(
             "heading": heading,
             "created_at": ts.isoformat(),
         }
+        if trip_active is not None:
+            location_data["trip_active"] = trip_active
         if current_draw is not None:
             location_data["current_draw"] = current_draw
         if voltage is not None:

@@ -9,6 +9,7 @@ class Device(BaseModel):
     sms_number: str
     created_at: datetime
     remote_viewing: bool = False
+    leds_enabled: bool = False
     last_viewed_at: datetime | None = None
     name: str | None = None
     control_1: bool | None

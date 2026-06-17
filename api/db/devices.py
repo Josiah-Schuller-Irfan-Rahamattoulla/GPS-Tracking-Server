@@ -23,7 +23,14 @@ def get_devices_by_user_id(db_conn: PGConnection, user_id: int) -> list[Device]:
                 (user_id,),
             )
             devices = cursor.fetchall()
-            return [Device(**device) for device in devices] if devices else []
+            normalized = []
+            for device in devices or []:
+                if "remote_viewing" not in device or device["remote_viewing"] is None:
+                    device["remote_viewing"] = False
+                if "leds_enabled" not in device or device["leds_enabled"] is None:
+                    device["leds_enabled"] = False
+                normalized.append(Device(**device))
+            return normalized
 
 
 def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
@@ -45,6 +52,8 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
                 # Guarantee remote_viewing is always present and never None
                 if "remote_viewing" not in device or device["remote_viewing"] is None:
                     device["remote_viewing"] = False
+                if "leds_enabled" not in device or device["leds_enabled"] is None:
+                    device["leds_enabled"] = False
                 if "last_applied_control_version" not in device or device["last_applied_control_version"] is None:
                     device["last_applied_control_version"] = 0
                 return Device(**device)
@@ -385,14 +394,16 @@ def update_device_tracking(
     device_id: int,
     user_id: int,
     remote_viewing: bool | None = None,
+    leds_enabled: bool | None = None,
 ) -> Device | None:
     """
-    Update device remote viewing status.
+    Update device remote viewing status and optional hardware flags.
 
     :param db_conn: Database connection object
     :param device_id: ID of the device
     :param user_id: ID of the user (for verification)
     :param remote_viewing: True when web/app is actively viewing device (optional)
+    :param leds_enabled: True to enable tracker status LEDs (optional)
     :return: Updated Device if successful, None if not found or not owned
     """
     with db_conn:
@@ -409,14 +420,21 @@ def update_device_tracking(
             if not device_row:
                 return None
 
-            if remote_viewing is None:
+            if remote_viewing is None and leds_enabled is None:
                 return Device(**device_row)
 
-            updates = ["remote_viewing = %s"]
-            values = [remote_viewing]
-            
-            if remote_viewing:
-                updates.append("last_viewed_at = CURRENT_TIMESTAMP")
+            updates: list[str] = []
+            values: list[object] = []
+
+            if remote_viewing is not None:
+                updates.append("remote_viewing = %s")
+                values.append(remote_viewing)
+                if remote_viewing:
+                    updates.append("last_viewed_at = CURRENT_TIMESTAMP")
+
+            if leds_enabled is not None:
+                updates.append("leds_enabled = %s")
+                values.append(leds_enabled)
 
             set_clause = ", ".join(updates)
 

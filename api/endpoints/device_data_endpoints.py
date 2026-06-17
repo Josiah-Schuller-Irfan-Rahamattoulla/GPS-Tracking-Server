@@ -286,6 +286,11 @@ async def get_device_controls(
         controls["remote_viewing"] = False
     else:
         controls["remote_viewing"] = rv
+    leds = getattr(device, "leds_enabled", None)
+    if leds is None:
+        controls["leds_enabled"] = False
+    else:
+        controls["leds_enabled"] = leds
     print(f"DEBUG /getDeviceControls response: {controls}")
     return JSONResponse(content=controls)
 

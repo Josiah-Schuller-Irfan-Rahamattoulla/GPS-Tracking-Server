@@ -151,6 +151,7 @@ class AppDeviceResponse(BaseModel):
     sms_number: str
     name: str | None = None
     remote_viewing: bool | None = None
+    leds_enabled: bool | None = False
     last_viewed_at: datetime | None = None
     control_1: bool | None
     control_2: bool | None
@@ -201,6 +202,7 @@ def _app_device_response(device) -> AppDeviceResponse:
         sms_number=device.sms_number,
         name=device.name,
         remote_viewing=device.remote_viewing,
+        leds_enabled=getattr(device, "leds_enabled", False),
         last_viewed_at=device.last_viewed_at,
         control_1=device.control_1,
         control_2=device.control_2,
@@ -305,6 +307,7 @@ async def get_device_endpoint(
 
 class DeviceTrackingUpdate(BaseModel):
     remote_viewing: bool | None = None  # Set true when web/app is actively viewing device
+    leds_enabled: bool | None = None    # Enable tracker status LEDs on hardware
 
 
 @router.put("/devices/{device_id}/tracking", response_model=AppDeviceResponse)
@@ -323,6 +326,7 @@ async def update_device_tracking_endpoint(
         device_id=device_id,
         user_id=user_id,
         remote_viewing=tracking.remote_viewing,
+        leds_enabled=tracking.leds_enabled,
     )
 
     if not updated_device:
@@ -336,6 +340,7 @@ async def update_device_tracking_endpoint(
         sms_number=updated_device.sms_number,
         name=updated_device.name,
         remote_viewing=updated_device.remote_viewing,
+        leds_enabled=getattr(updated_device, "leds_enabled", False),
         last_viewed_at=updated_device.last_viewed_at,
         control_1=updated_device.control_1,
         control_2=updated_device.control_2,
@@ -431,6 +436,7 @@ async def update_device_controls_endpoint(
 
 class TripStatusResponse(BaseModel):
     trip_active: bool
+    tracker_mode: str = "COLD"
     last_trip_time: datetime | None = None
     last_gps_time: datetime | None = None
 
@@ -486,6 +492,7 @@ async def get_device_trip_status(
     
     return TripStatusResponse(
         trip_active=trip_active,
+        tracker_mode="HOT" if trip_active else "COLD",
         last_trip_time=last_trip_time,
         last_gps_time=last_gps_time,
     )
