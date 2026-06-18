@@ -12,7 +12,7 @@ from psycopg2 import IntegrityError, OperationalError
 from pydantic import BaseModel
 import httpx
 
-from api.db.devices import create_device, get_device, ack_device_controls_applied
+from api.db.devices import create_device, get_device, ack_device_controls_applied, ack_device_reset
 from api.agnss.cache_store import get_agnss_cache
 from api.services.device_ingest import ingest_location
 from api.agnss.supl_client import get_supl_assistance_data
@@ -224,6 +224,8 @@ class DeviceControlsResponse(BaseModel):
     controls_updated_at: str | None = None
     last_viewed_at: str | None = None
     remote_viewing: bool = False
+    reset_token: int = 0
+    reset_applied_token: int = 0
 
 
 @router.get("/getDeviceControls", response_model=DeviceControlsResponse)
@@ -291,6 +293,8 @@ async def get_device_controls(
         controls["leds_enabled"] = False
     else:
         controls["leds_enabled"] = leds
+    controls["reset_token"] = int(getattr(device, "reset_token", 0) or 0)
+    controls["reset_applied_token"] = int(getattr(device, "reset_applied_token", 0) or 0)
     print(f"DEBUG /getDeviceControls response: {controls}")
     return JSONResponse(content=controls)
 
@@ -341,6 +345,45 @@ async def device_control_ack(payload: DeviceControlAckRequest):
         "control_version": control_version_val,
         "last_applied_control_version": last_applied_val,
         "command_pending": command_pending,
+    }
+
+
+class DeviceResetAckRequest(BaseModel):
+    device_id: int
+    reset_token: int
+
+
+@router.post("/deviceResetAck")
+async def device_reset_ack(payload: DeviceResetAckRequest):
+    """Device confirms it received a remote reset request (before reboot)."""
+    if payload.reset_token <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reset_token must be > 0",
+        )
+
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        updated_device = ack_device_reset(
+            db_conn=db_conn,
+            device_id=payload.device_id,
+            reset_token=payload.reset_token,
+        )
+    finally:
+        db_conn.close()
+
+    if not updated_device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found",
+        )
+
+    return {
+        "success": True,
+        "message": "Reset ACK recorded",
+        "device_id": payload.device_id,
+        "reset_token": int(getattr(updated_device, "reset_token", 0) or 0),
+        "reset_applied_token": int(getattr(updated_device, "reset_applied_token", 0) or 0),
     }
 
 

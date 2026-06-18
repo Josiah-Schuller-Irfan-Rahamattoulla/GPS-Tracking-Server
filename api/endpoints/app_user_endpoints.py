@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from psycopg2 import connect
 from pydantic import BaseModel
 
-from api.db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, update_device_tracking, delete_all_devices, create_user_device_row, get_device
+from api.db.devices import get_devices_by_user_id, get_device_by_user, update_device_controls, update_device_tracking, delete_all_devices, create_user_device_row, get_device, request_device_reset
 from api.db.gps_data import get_gps_data
 from api.db.models import GPSData
 from api.db.users import get_user, get_user_by_email, create_user, verify_user_password
@@ -160,6 +160,8 @@ class AppDeviceResponse(BaseModel):
     control_version: int | None = None
     last_applied_control_version: int | None = 0
     controls_updated_at: datetime | None = None
+    reset_token: int = 0
+    reset_applied_token: int = 0
 
 
 class LinkDeviceRequest(BaseModel):
@@ -211,6 +213,8 @@ def _app_device_response(device) -> AppDeviceResponse:
         control_version=device.control_version,
         last_applied_control_version=device.last_applied_control_version,
         controls_updated_at=device.controls_updated_at,
+        reset_token=int(getattr(device, "reset_token", 0) or 0),
+        reset_applied_token=int(getattr(device, "reset_applied_token", 0) or 0),
     )
 
 
@@ -432,6 +436,50 @@ async def update_device_controls_endpoint(
         last_applied_control_version=updated_device.last_applied_control_version,
         controls_updated_at=updated_device.controls_updated_at,
     )
+
+
+@router.post("/devices/{device_id}/reset", response_model=AppDeviceResponse)
+async def request_tracker_reset_endpoint(
+    device_id: int,
+    user_id: int = Query(..., description="User ID"),
+):
+    """
+  Request a remote reboot of the tracker. Firmware learns via GET getDeviceControls
+  (reset_token) and ACKs before rebooting.
+    """
+    db_conn = connect(dsn=os.getenv("DATABASE_URI"))
+    try:
+        updated_device = request_device_reset(
+            db_conn=db_conn,
+            device_id=device_id,
+            user_id=user_id,
+        )
+    finally:
+        db_conn.close()
+
+    if not updated_device:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Device not found or not owned by user",
+        )
+
+    reset_token = int(getattr(updated_device, "reset_token", 0) or 0)
+    await broadcast_device_control_response(device_id, {
+        "device_id": updated_device.device_id,
+        "control_1": updated_device.control_1,
+        "control_2": updated_device.control_2,
+        "control_3": updated_device.control_3,
+        "control_4": updated_device.control_4,
+        "control_version": updated_device.control_version,
+        "last_applied_control_version": updated_device.last_applied_control_version,
+        "command_pending": int(updated_device.control_version or 0) > int(
+            updated_device.last_applied_control_version or 0
+        ),
+        "reset_token": reset_token,
+        "reset_applied_token": int(getattr(updated_device, "reset_applied_token", 0) or 0),
+    })
+
+    return _app_device_response(updated_device)
 
 
 class TripStatusResponse(BaseModel):

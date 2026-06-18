@@ -56,6 +56,10 @@ def get_device(db_conn: PGConnection, device_id: int) -> Device | None:
                     device["leds_enabled"] = False
                 if "last_applied_control_version" not in device or device["last_applied_control_version"] is None:
                     device["last_applied_control_version"] = 0
+                if "reset_token" not in device or device["reset_token"] is None:
+                    device["reset_token"] = 0
+                if "reset_applied_token" not in device or device["reset_applied_token"] is None:
+                    device["reset_applied_token"] = 0
                 return Device(**device)
             return None
 
@@ -386,6 +390,63 @@ def ack_device_controls_applied(
                 or updated["last_applied_control_version"] is None
             ):
                 updated["last_applied_control_version"] = applied_control_version
+            return Device(**updated) if updated else None
+
+
+def request_device_reset(
+    db_conn: PGConnection,
+    device_id: int,
+    user_id: int,
+) -> Device | None:
+    """Bump reset_token for a user-owned device (remote reboot request)."""
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                UPDATE devices d
+                SET reset_token = COALESCE(d.reset_token, 0) + 1
+                FROM users_devices ud
+                WHERE d.device_id = ud.device_id
+                  AND d.device_id = %s
+                  AND ud.user_id = %s
+                RETURNING d.*
+                """,
+                (device_id, user_id),
+            )
+            updated = cursor.fetchone()
+            return Device(**updated) if updated else None
+
+
+def ack_device_reset(
+    db_conn: PGConnection,
+    device_id: int,
+    reset_token: int,
+) -> Device | None:
+    """Device ACK before reboot — clears pending reset on server."""
+    with db_conn:
+        with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                """
+                ALTER TABLE devices
+                ADD COLUMN IF NOT EXISTS reset_token INTEGER NOT NULL DEFAULT 0
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE devices
+                ADD COLUMN IF NOT EXISTS reset_applied_token INTEGER NOT NULL DEFAULT 0
+                """
+            )
+            cursor.execute(
+                """
+                UPDATE devices
+                SET reset_applied_token = GREATEST(COALESCE(reset_applied_token, 0), %s)
+                WHERE device_id = %s
+                RETURNING *
+                """,
+                (reset_token, device_id),
+            )
+            updated = cursor.fetchone()
             return Device(**updated) if updated else None
 
 

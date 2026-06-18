@@ -19,6 +19,8 @@ class Device(BaseModel):
     control_version: int | None = None
     last_applied_control_version: int | None = 0
     controls_updated_at: datetime | None = None
+    reset_token: int = 0
+    reset_applied_token: int = 0
 
 
 class GPSData(BaseModel):

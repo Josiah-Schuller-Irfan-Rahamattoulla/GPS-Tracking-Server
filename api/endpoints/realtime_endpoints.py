@@ -483,6 +483,8 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
         "command_pending",
         "command_recovery_interval_ms",
         "controls_updated_at",
+        "reset_token",
+        "reset_applied_token",
     ):
         if key in control_data:
             message[key] = control_data[key]
