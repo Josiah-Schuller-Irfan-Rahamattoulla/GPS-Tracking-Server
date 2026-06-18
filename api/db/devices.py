@@ -393,6 +393,21 @@ def ack_device_controls_applied(
             return Device(**updated) if updated else None
 
 
+def _ensure_reset_token_columns(cursor) -> None:
+    cursor.execute(
+        """
+        ALTER TABLE devices
+        ADD COLUMN IF NOT EXISTS reset_token INTEGER NOT NULL DEFAULT 0
+        """
+    )
+    cursor.execute(
+        """
+        ALTER TABLE devices
+        ADD COLUMN IF NOT EXISTS reset_applied_token INTEGER NOT NULL DEFAULT 0
+        """
+    )
+
+
 def request_device_reset(
     db_conn: PGConnection,
     device_id: int,
@@ -401,6 +416,7 @@ def request_device_reset(
     """Bump reset_token for a user-owned device (remote reboot request)."""
     with db_conn:
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            _ensure_reset_token_columns(cursor)
             cursor.execute(
                 """
                 UPDATE devices d
@@ -425,18 +441,7 @@ def ack_device_reset(
     """Device ACK before reboot — clears pending reset on server."""
     with db_conn:
         with db_conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(
-                """
-                ALTER TABLE devices
-                ADD COLUMN IF NOT EXISTS reset_token INTEGER NOT NULL DEFAULT 0
-                """
-            )
-            cursor.execute(
-                """
-                ALTER TABLE devices
-                ADD COLUMN IF NOT EXISTS reset_applied_token INTEGER NOT NULL DEFAULT 0
-                """
-            )
+            _ensure_reset_token_columns(cursor)
             cursor.execute(
                 """
                 UPDATE devices
