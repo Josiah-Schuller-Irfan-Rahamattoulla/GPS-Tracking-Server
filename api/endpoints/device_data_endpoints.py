@@ -432,159 +432,30 @@ async def get_agnss_data(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid access token"
         )
-    
-    agnss_data = None
-    source = None
-    cache_status = None
-    agnss_provider = os.getenv("AGNSS_PROVIDER", "").strip().upper()
+    db_conn.close()
 
-    def _provider_allows(provider: str) -> bool:
-        return (not agnss_provider) or agnss_provider == provider
+    from api.services.agnss_fetch import fetch_agnss_bytes
 
-    # Try 1: nRF Cloud (if API key configured)
-    if _provider_allows("NRF_CLOUD"):
-        nrf_cloud_api_key = auth_bearer_token()
-        if not nrf_cloud_api_key:
-            if agnss_provider == "NRF_CLOUD":
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="nRF Cloud Location Services not configured (set NRFCLOUD_OAT + slugs, or legacy NRF_CLOUD_API_KEY)",
-                )
-        else:
-            try:
-                logger.info("Attempting A-GNSS from nRF Cloud for device %d", device_id)
-                url = build_location_url("agnss")
-                auth_headers = {"Authorization": f"Bearer {nrf_cloud_api_key}"}
-                # Proper GNSS assistance uses serving cell identity (type 8) for filtered ephemeris.
-                # If we don't have cell IDs, fall back to default assistance (still helpful).
-                body: dict[str, object] = {}
+    agnss_data, source = await fetch_agnss_bytes(
+        device_id,
+        lat=lat,
+        lon=lon,
+        mcc=mcc,
+        mnc=mnc,
+        tac=tac,
+        eci=eci,
+    )
 
-                have_cell_ids = (mcc is not None and mnc is not None and tac is not None and eci is not None)
-                if have_cell_ids:
-                    body = {
-                        "mcc": mcc,
-                        "mnc": mnc,
-                        "tac": tac,
-                        "eci": eci,
-                        # nRF Cloud API field name is `filtered` (not `filteredEphemeris`).
-                        # When true, returns ephemeris for only satellites in view (up to 16).
-                        "filtered": True,
-                        # Mask angle for filtered ephemeris. Default documented value is 5 degrees.
-                        "mask": 5,
-                        # Default assistance types plus "location" (8) derived from cell.
-                        "types": [1, 2, 3, 4, 6, 7, 8, 9],
-                    }
-                    logger.info("A-GNSS using cell IDs: mcc=%d mnc=%d tac=%d eci=%d", mcc, mnc, tac, eci)
-                elif lat is not None and lon is not None:
-                    # We keep lat/lon for backwards compatibility but do not currently forward it
-                    # upstream; the GNSS assistance API expects cell IDs for tailored results.
-                    logger.info("A-GNSS lat/lon hint provided but no cell IDs; requesting default assistance")
-                else:
-                    logger.info("A-GNSS requesting default assistance (no hints)")
-
-                def _parse_content_range(header_value: str | None) -> int | None:
-                    """Parse Content-Range header and return total size, or None."""
-                    if not header_value:
-                        return None
-                    try:
-                        parts = header_value.strip().split()
-                        if len(parts) != 2 or parts[0].lower() != "bytes":
-                            return None
-                        range_part = parts[1]
-                        if "/" not in range_part:
-                            return None
-                        _, total_part = range_part.split("/", 1)
-                        if total_part == "*":
-                            return None
-                        return int(total_part)
-                    except (ValueError, IndexError):
-                        return None
-
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        url,
-                        json=body,
-                        headers={
-                            **auth_headers,
-                            "Accept": "application/octet-stream",
-                            "Content-Type": "application/json",
-                            "Range": "bytes=0-16383",
-                        },
-                    )
-
-                    if response.status_code in (200, 206):
-                        chunks = [response.content]
-                        total_received = len(response.content)
-                        total_size = _parse_content_range(response.headers.get("Content-Range"))
-
-                        # Fetch remaining ranges if needed
-                        while total_size is not None and total_received < total_size:
-                            next_start = total_received
-                            range_header = f"bytes={next_start}-"
-                            next_response = await client.post(
-                                url,
-                                json=body,
-                                headers={
-                                    **auth_headers,
-                                    "Accept": "application/octet-stream",
-                                    "Content-Type": "application/json",
-                                    "Range": range_header,
-                                },
-                            )
-                            if next_response.status_code not in (200, 206):
-                                break
-                            chunk = next_response.content
-                            if not chunk:
-                                break
-                            chunks.append(chunk)
-                            total_received += len(chunk)
-
-                        agnss_data = b"".join(chunks)
-                        source = "nRF Cloud"
-                        logger.info("A-GNSS from nRF Cloud: %d bytes", len(agnss_data))
-                    else:
-                        logger.warning("nRF Cloud A-GNSS returned %d: %s", response.status_code, response.text[:500])
-            except Exception as e:
-                logger.warning("nRF Cloud A-GNSS failed: %s", e)
-
-    # Try 2: SUPL (free servers, no auth required)
-    if not agnss_data and _provider_allows("SUPL"):
-        try:
-            cache = get_agnss_cache()
-            if cache.enabled:
-                cached = cache.get()
-                if cached:
-                    agnss_data = cached
-                    source = "SUPL cache"
-                    cache_status = "HIT"
-
-            if not agnss_data:
-                logger.info("Attempting A-GNSS from SUPL servers for device %d", device_id)
-                agnss_data = await get_supl_assistance_data(device_id, lat, lon)
-                if agnss_data:
-                    source = "SUPL"
-                    cache_status = "MISS"
-                    if cache.enabled:
-                        cache.set(agnss_data)
-                    logger.info("A-GNSS from SUPL: %d bytes", len(agnss_data))
-        except Exception as e:
-            logger.warning("SUPL A-GNSS failed: %s", e)
-    
-    # Return data if we got any
     if agnss_data:
-        headers = {
-            "Content-Length": str(len(agnss_data)),
-            "X-AGNSS-Source": source,
-        }
-        if cache_status:
-            headers["X-AGNSS-Cache"] = cache_status
         return Response(
             content=agnss_data,
             media_type="application/octet-stream",
-            headers=headers,
+            headers={
+                "Content-Length": str(len(agnss_data)),
+                "X-AGNSS-Source": source or "unknown",
+            },
         )
-    
-    # Both failed
+
     raise HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="A-GNSS unavailable: no provider returned data",

@@ -1,6 +1,8 @@
 """Unit tests for MQTT topic helpers."""
 
 from api.services.mqtt_topics import (
+    agnss_data_topic,
+    agnss_request_topic,
     control_ack_topic,
     controls_topic,
     device_uplink_subscriptions,
@@ -15,6 +17,8 @@ def test_device_topics_default():
     assert location_topic(67) == "devices/67/location"
     assert control_ack_topic(67) == "devices/67/control_ack"
     assert reset_ack_topic(67) == "devices/67/reset_ack"
+    assert agnss_request_topic(67) == "devices/67/agnss_request"
+    assert agnss_data_topic(67) == "devices/67/agnss_data"
 
 
 def test_uplink_subscriptions():
@@ -23,6 +27,7 @@ def test_uplink_subscriptions():
         "devices/+/location",
         "devices/+/control_ack",
         "devices/+/reset_ack",
+        "devices/+/agnss_request",
     }
 
 

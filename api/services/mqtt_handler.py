@@ -1,5 +1,5 @@
 """
-Process MQTT uplink messages from devices (location, control ACK, reset ACK).
+Process MQTT uplink messages from devices (location, control ACK, reset ACK, A-GNSS request).
 
 Topic device_id is trusted when messages arrive on 8883 with per-device ACL auth.
 """
@@ -19,7 +19,9 @@ from api.endpoints.realtime_endpoints import (
     broadcast_geofence_breach,
     broadcast_location_update,
 )
+from api.services.agnss_fetch import fetch_agnss_bytes
 from api.services.device_ingest import ingest_location
+from api.services.mqtt_client import publish_agnss_chunks_async
 from api.services.mqtt_topics import parse_device_id_from_topic
 
 logger = logging.getLogger(__name__)
@@ -77,6 +79,8 @@ def handle_mqtt_message(topic: str, payload_raw: bytes) -> None:
         _handle_control_ack(device_id, payload)
     elif suffix == "reset_ack":
         _handle_reset_ack(device_id, payload)
+    elif suffix == "agnss_request":
+        _handle_agnss_request(device_id, payload)
     else:
         logger.debug("MQTT unhandled suffix=%s topic=%s", suffix, topic)
 
@@ -182,3 +186,51 @@ def _handle_reset_ack(device_id: int, payload: dict[str, Any]) -> None:
         return
 
     logger.info("MQTT reset_ack device_id=%s token=%s", device_id, reset_token)
+
+
+def _optional_float(body: dict[str, Any], key: str) -> float | None:
+    if key not in body or body[key] is None:
+        return None
+    return float(body[key])
+
+
+def _optional_int(body: dict[str, Any], key: str) -> int | None:
+    if key not in body or body[key] is None:
+        return None
+    return int(body[key])
+
+
+def _handle_agnss_request(device_id: int, payload: dict[str, Any]) -> None:
+    body = _unwrap_data(payload)
+
+    async def _fetch_and_publish():
+        try:
+            agnss_data, source = await fetch_agnss_bytes(
+                device_id,
+                lat=_optional_float(body, "lat"),
+                lon=_optional_float(body, "lon"),
+                mcc=_optional_int(body, "mcc"),
+                mnc=_optional_int(body, "mnc"),
+                tac=_optional_int(body, "tac"),
+                eci=_optional_int(body, "eci"),
+            )
+        except (TypeError, ValueError) as exc:
+            logger.warning("MQTT agnss_request invalid fields device_id=%s err=%s", device_id, exc)
+            return
+
+        if not agnss_data:
+            logger.warning("MQTT agnss_request unavailable device_id=%s", device_id)
+            return
+
+        ok = await publish_agnss_chunks_async(device_id, agnss_data)
+        if ok:
+            logger.info(
+                "MQTT agnss_request fulfilled device_id=%s bytes=%s source=%s",
+                device_id,
+                len(agnss_data),
+                source or "unknown",
+            )
+        else:
+            logger.warning("MQTT agnss_data publish failed device_id=%s", device_id)
+
+    _schedule(_fetch_and_publish())

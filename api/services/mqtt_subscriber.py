@@ -1,5 +1,5 @@
 """
-MQTT subscriber — device uplink (location, ACKs) on internal broker port 1883.
+MQTT subscriber — device uplink (location, ACKs, A-GNSS requests) on internal broker port 1883.
 """
 
 from __future__ import annotations

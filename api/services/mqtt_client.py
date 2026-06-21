@@ -9,6 +9,7 @@ firmware can reuse controls_parse_json().
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from typing import Any
 
 import paho.mqtt.client as mqtt
 
-from api.services.mqtt_topics import controls_topic, location_topic
+from api.services.mqtt_topics import controls_topic, agnss_data_topic, location_topic
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,53 @@ def publish_device_controls(device_id: int, control_data: dict[str, Any]) -> boo
 
 async def publish_device_controls_async(device_id: int, control_data: dict[str, Any]) -> bool:
     return await asyncio.to_thread(publish_device_controls, device_id, control_data)
+
+
+def publish_agnss_chunks(device_id: int, agnss_data: bytes) -> bool:
+    """
+    Publish A-GNSS binary as chunked JSON on devices/{id}/agnss_data (QoS 1, not retained).
+
+    Each message: {"seq": N, "total": T, "chunk_b64": "..."} with ~768 raw bytes per chunk.
+    """
+    if not mqtt_enabled() or not agnss_data:
+        return False
+
+    client = _connect_client()
+    if client is None:
+        return False
+
+    chunk_size = int(os.getenv("MQTT_AGNSS_CHUNK_BYTES", "768"))
+    topic = agnss_data_topic(device_id)
+    qos = int(os.getenv("MQTT_AGNSS_QOS", "1"))
+    total = (len(agnss_data) + chunk_size - 1) // chunk_size
+
+    try:
+        for seq in range(total):
+            start = seq * chunk_size
+            chunk = agnss_data[start : start + chunk_size]
+            payload_obj = {
+                "seq": seq,
+                "total": total,
+                "chunk_b64": base64.b64encode(chunk).decode("ascii"),
+            }
+            payload = json.dumps(payload_obj, separators=(",", ":"))
+            info = client.publish(topic, payload, qos=qos, retain=False)
+            info.wait_for_publish(timeout=float(os.getenv("MQTT_PUBLISH_TIMEOUT_SEC", "5")))
+        logger.info(
+            "MQTT A-GNSS published device_id=%s topic=%s bytes=%s chunks=%s",
+            device_id,
+            topic,
+            len(agnss_data),
+            total,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("MQTT A-GNSS publish failed device_id=%s topic=%s err=%s", device_id, topic, exc)
+        return False
+
+
+async def publish_agnss_chunks_async(device_id: int, agnss_data: bytes) -> bool:
+    return await asyncio.to_thread(publish_agnss_chunks, device_id, agnss_data)
 
 
 def mqtt_status() -> dict[str, Any]:

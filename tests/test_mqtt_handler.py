@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.services.mqtt_handler import handle_mqtt_message
 
@@ -62,3 +63,20 @@ def test_handle_control_ack(mock_schedule, mock_connect, mock_ack):
     assert mock_ack.call_args.kwargs["applied_control_version"] == 5
     mock_conn.close.assert_called_once()
     mock_schedule.assert_called_once()
+
+
+@patch("api.services.mqtt_handler.publish_agnss_chunks_async", new_callable=AsyncMock, return_value=True)
+@patch("api.services.mqtt_handler.fetch_agnss_bytes", new_callable=AsyncMock, return_value=(b"\x01\x02", "nRF Cloud"))
+@patch("api.services.mqtt_handler._schedule")
+def test_handle_agnss_request(mock_schedule, mock_fetch, mock_publish):
+    handle_mqtt_message(
+        "devices/67/agnss_request",
+        b'{"mcc":505,"mnc":1,"tac":12345,"eci":67890}',
+    )
+
+    mock_schedule.assert_called_once()
+    coro = mock_schedule.call_args[0][0]
+    asyncio.run(coro)
+    mock_fetch.assert_awaited_once()
+    assert mock_fetch.call_args.kwargs["mcc"] == 505
+    mock_publish.assert_awaited_once_with(67, b"\x01\x02")
