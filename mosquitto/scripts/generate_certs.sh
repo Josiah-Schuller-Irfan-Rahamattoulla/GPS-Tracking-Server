@@ -20,6 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CERT_DIR="${REPO_ROOT}/mosquitto/config/certs"
 VALIDITY_DAYS="${1:-825}"
+# Public hostname devices use for MQTT (must match firmware SERVER_BASE_URL host).
+MQTT_TLS_HOSTNAME="${MQTT_TLS_HOSTNAME:-gpstracking.josiahschuller.au}"
 
 mkdir -p "${CERT_DIR}"
 
@@ -36,11 +38,11 @@ openssl req -x509 -newkey rsa:2048 -nodes \
 openssl req -newkey rsa:2048 -nodes \
   -keyout "${CERT_DIR}/server.key" \
   -out "${CERT_DIR}/server.csr" \
-  -subj "/CN=mosquitto"
+  -subj "/CN=${MQTT_TLS_HOSTNAME}"
 
-# 3) Sign server cert with our CA (add SAN for localhost + broker hostname)
+# 3) Sign server cert with our CA (SAN must include the public hostname)
 cat > "${CERT_DIR}/server.ext" <<EOF
-subjectAltName = DNS:localhost,DNS:mosquitto,IP:127.0.0.1
+subjectAltName = DNS:localhost,DNS:mosquitto,DNS:${MQTT_TLS_HOSTNAME},IP:127.0.0.1
 EOF
 
 openssl x509 -req \
