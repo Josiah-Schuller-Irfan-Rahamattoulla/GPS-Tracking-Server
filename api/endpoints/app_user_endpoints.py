@@ -19,6 +19,7 @@ from api.db.geofences import (
 from api.db.models import GeofenceBreachEvent
 from psycopg2.extras import RealDictCursor
 from api.endpoints.realtime_endpoints import broadcast_device_control_response
+from api.services.mqtt_client import control_data_from_device, publish_device_controls_async
 
 router = APIRouter()  # Router for authenticated endpoints
 auth_router = APIRouter()  # Router for unauthenticated endpoints (login/signup)
@@ -339,6 +340,8 @@ async def update_device_tracking_endpoint(
             detail="Device not found or not owned by user",
         )
 
+    await publish_device_controls_async(device_id, control_data_from_device(updated_device))
+
     return AppDeviceResponse(
         device_id=updated_device.device_id,
         sms_number=updated_device.sms_number,
@@ -412,17 +415,7 @@ async def update_device_controls_endpoint(
             detail="Device not found, not owned by user, or version conflict",
         )
 
-    await broadcast_device_control_response(device_id, {
-        "device_id": updated_device.device_id,
-        "control_1": updated_device.control_1,
-        "control_2": updated_device.control_2,
-        "control_3": updated_device.control_3,
-        "control_4": updated_device.control_4,
-        "control_version": updated_device.control_version,
-        "last_applied_control_version": updated_device.last_applied_control_version,
-        "command_pending": int(updated_device.control_version or 0) > int(updated_device.last_applied_control_version or 0),
-        "controls_updated_at": updated_device.controls_updated_at.isoformat() if updated_device.controls_updated_at else None,
-    })
+    await broadcast_device_control_response(device_id, control_data_from_device(updated_device))
     
     return AppDeviceResponse(
         device_id=updated_device.device_id,
@@ -463,21 +456,7 @@ async def request_tracker_reset_endpoint(
             detail="Device not found or not owned by user",
         )
 
-    reset_token = int(getattr(updated_device, "reset_token", 0) or 0)
-    await broadcast_device_control_response(device_id, {
-        "device_id": updated_device.device_id,
-        "control_1": updated_device.control_1,
-        "control_2": updated_device.control_2,
-        "control_3": updated_device.control_3,
-        "control_4": updated_device.control_4,
-        "control_version": updated_device.control_version,
-        "last_applied_control_version": updated_device.last_applied_control_version,
-        "command_pending": int(updated_device.control_version or 0) > int(
-            updated_device.last_applied_control_version or 0
-        ),
-        "reset_token": reset_token,
-        "reset_applied_token": int(getattr(updated_device, "reset_applied_token", 0) or 0),
-    })
+    await broadcast_device_control_response(device_id, control_data_from_device(updated_device))
 
     return _app_device_response(updated_device)
 

@@ -31,6 +31,34 @@ def mqtt_enabled() -> bool:
     return flag not in ("0", "false", "no", "off")
 
 
+def control_data_from_device(device: Any) -> dict[str, Any]:
+    """Build MQTT/WS control payload fields from a device row or model."""
+    control_version_val = int(getattr(device, "control_version", 0) or 0)
+    last_applied_val = int(getattr(device, "last_applied_control_version", 0) or 0)
+    command_pending = control_version_val > last_applied_val
+    controls_updated_at = getattr(device, "controls_updated_at", None)
+    if controls_updated_at is not None and hasattr(controls_updated_at, "isoformat"):
+        controls_updated_at = controls_updated_at.isoformat()
+    return {
+        "device_id": getattr(device, "device_id", None),
+        "control_1": getattr(device, "control_1", None),
+        "control_2": getattr(device, "control_2", None),
+        "control_3": getattr(device, "control_3", None),
+        "control_4": getattr(device, "control_4", None),
+        "control_version": control_version_val,
+        "last_applied_control_version": last_applied_val,
+        "command_pending": command_pending,
+        "command_recovery_interval_ms": (
+            int(os.getenv("COMMAND_RECOVERY_INTERVAL_MS", "5000")) if command_pending else None
+        ),
+        "controls_updated_at": controls_updated_at,
+        "reset_token": int(getattr(device, "reset_token", 0) or 0),
+        "reset_applied_token": int(getattr(device, "reset_applied_token", 0) or 0),
+        "remote_viewing": bool(getattr(device, "remote_viewing", False) or False),
+        "leds_enabled": bool(getattr(device, "leds_enabled", False) or False),
+    }
+
+
 def build_controls_payload(device_id: int, control_data: dict[str, Any]) -> dict[str, Any]:
     """Build MQTT JSON payload aligned with WebSocket device_control_response."""
     message: dict[str, Any] = {
@@ -50,6 +78,8 @@ def build_controls_payload(device_id: int, control_data: dict[str, Any]) -> dict
         "controls_updated_at",
         "reset_token",
         "reset_applied_token",
+        "remote_viewing",
+        "leds_enabled",
     ):
         if key in control_data:
             message[key] = control_data[key]
