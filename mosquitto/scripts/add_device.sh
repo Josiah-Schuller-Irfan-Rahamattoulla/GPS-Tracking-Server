@@ -41,3 +41,10 @@ else
 fi
 
 echo "MQTT credentials updated for device_id=${DEVICE_ID}"
+
+# Mosquitto 2.x loads password_file at startup; reload after update.
+if [[ -f /mosquitto/config/mosquitto.conf ]]; then
+  kill -HUP 1 2>/dev/null || true
+else
+  docker compose kill -s HUP mosquitto 2>/dev/null || true
+fi

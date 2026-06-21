@@ -46,7 +46,7 @@ def provision_mqtt_device(device_id: int, access_token: str) -> bool:
             capture_output=True,
             text=True,
         )
-        logger.info("MQTT credentials provisioned device_id=%s", device_id)
+        logger.info("MQTT credentials provisioned device_id=%s (SIGHUP mosquitto to reload passwd)", device_id)
         return True
     except subprocess.CalledProcessError as exc:
         logger.warning(

@@ -70,6 +70,19 @@ services:
       - mosquitto_data:/mosquitto/data
     ports:
       - "8883:8883"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        mkdir -p /mosquitto/data/certs
+        cp -f /mosquitto/config/certs/ca.crt /mosquitto/config/certs/server.crt /mosquitto/config/certs/server.key /mosquitto/data/certs/
+        chown mosquitto:mosquitto /mosquitto/data/certs/ca.crt /mosquitto/data/certs/server.crt /mosquitto/data/certs/server.key
+        chmod 644 /mosquitto/data/certs/ca.crt /mosquitto/data/certs/server.crt
+        chmod 600 /mosquitto/data/certs/server.key
+        touch /mosquitto/config/passwd
+        chown mosquitto:mosquitto /mosquitto/config/passwd
+        chmod 600 /mosquitto/config/passwd
+        exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "mosquitto_sub -h localhost -p 1883 -t '$$SYS/broker/version' -C 1 -W 3 || exit 1"]
