@@ -502,6 +502,16 @@ async def broadcast_device_control_response(device_id: int, control_data: dict) 
         "device_control_response broadcast device_id=%s n_users=%s n_device=%s",
         device_id, n_users, n_device,
     )
+
+    try:
+        from api.services.mqtt_client import publish_device_controls_async
+
+        mqtt_ok = await publish_device_controls_async(device_id, control_data)
+        if mqtt_ok:
+            logger.info("device_control_response mqtt device_id=%s", device_id)
+    except Exception as e:
+        logger.warning("device_control_response mqtt failed device_id=%s err=%s", device_id, e)
+
     return n_users + n_device
 
 

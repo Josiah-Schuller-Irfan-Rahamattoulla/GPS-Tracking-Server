@@ -26,6 +26,7 @@ WORKDIR /app
 # Install curl for health checks
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    mosquitto-clients \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder

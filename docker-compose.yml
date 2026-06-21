@@ -59,6 +59,25 @@ services:
       psql -h db -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -v ON_ERROR_STOP=1 -f /migrations/migration_010_device_reset_token.sql;
       echo "Migrations complete.";
 
+  # Mosquitto MQTT broker (controls push to cellular devices on 8883/TLS).
+  # Before first start: ./mosquitto/scripts/generate_certs.sh
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: gps-tracking-mqtt
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/scripts:/mosquitto/scripts:ro
+      - mosquitto_data:/mosquitto/data
+    ports:
+      - "8883:8883"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -p 1883 -t '$$SYS/broker/version' -C 1 -W 3 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   # FastAPI Server
   api:
     build:
@@ -67,6 +86,10 @@ services:
     container_name: gps-tracking-api
     environment:
       DATABASE_URI: postgresql://${POSTGRES_USER:-gpsuser}:${POSTGRES_PASSWORD:-gpspassword}@db:5432/${POSTGRES_DB:-gps_tracking}
+      MQTT_ENABLED: ${MQTT_ENABLED:-1}
+      MQTT_HOST: mosquitto
+      MQTT_PORT: "1883"
+      MQTT_PASSWD_FILE: /mosquitto/config/passwd
       # nRF Cloud Location Services (new auth): Memfault Organization Auth Token (OAT) + org/project slugs.
       NRFCLOUD_OAT: ${NRFCLOUD_OAT}
       NRFCLOUD_ORG_SLUG: ${NRFCLOUD_ORG_SLUG}
@@ -86,11 +109,15 @@ services:
       - 8.8.4.4
     ports:
       - "8000:8000"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
     depends_on:
       db:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      mosquitto:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -99,3 +126,4 @@ services:
 
 volumes:
   postgres_data:
+  mosquitto_data:

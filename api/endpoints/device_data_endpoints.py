@@ -206,6 +206,13 @@ async def register_device(device_data: DeviceRegistrationData):
             detail="Device or SMS number already exists",
         )
 
+    try:
+        from api.services.mqtt_provision import provision_mqtt_device_async
+
+        await provision_mqtt_device_async(device_data.device_id, device_data.access_token)
+    except Exception as e:
+        print(f"WARN registerDevice: MQTT credential provision failed: {e}")
+
     return {"success": True, "message": "Device registered successfully"}
 
 

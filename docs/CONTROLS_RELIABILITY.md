@@ -9,6 +9,7 @@ This doc describes how we ensure device controls (e.g. kill switch) can be **sen
 | **User can always send** | `PUT /v1/devices/{id}/controls` always accepts the request, updates the DB, and broadcasts to the device's WebSocket room. No dependency on device being online. |
 | **Applied when device is connected** | Server broadcasts every control update to the device's WS room. Device applies each `device_control_response` immediately. |
 | **Applied when device was disconnected** | On **every** WebSocket connect, the server sends a **welcome** message with the **current** controls (re-fetched from DB). So any change made while the device was offline is applied as soon as it reconnects. |
+| **Applied via MQTT (nRF9151 target path)** | On every control update, FastAPI publishes a **retained** QoS 1 message to `devices/{device_id}/controls`. Devices subscribe on Mosquitto **8883/TLS** (username=`device_id`, password=`access_token`). Offline devices receive the latest state on next MQTT connect / eDRX wake — no persistent WebSocket required. |
 | **No stale state** | Welcome message is built from a fresh DB read at connect time, not from a cached device object. |
 
 So: **send at any time** (API + DB); **apply at any time** = immediately if connected, or on next connect via welcome.
@@ -23,6 +24,8 @@ So: **send at any time** (API + DB); **apply at any time** = immediately if conn
   - Send one `device_control_response` with current `control_1`..`control_4` (and related fields). Any control not set in DB is sent as `false` so the device always gets a full state.
 - **Broadcast on PUT**  
   When an app user calls `PUT /v1/devices/{id}/controls`, the server updates the DB and calls `broadcast_device_control_response`: it sends to the **device** room first, then to the user room. Optionally set `CONTROL_DUPLICATE_SEND_MS=150` so the server sends the same control message to the device again after 150 ms (helps on flaky networks).
+- **MQTT publish on PUT (Phase 2)**  
+  The same control payload is published to Mosquitto topic `devices/{id}/controls` (QoS 1, retained). See `mosquitto/README.md`. Requires `docker compose` Mosquitto service and `./mosquitto/scripts/generate_certs.sh` before first start. Existing devices need `./mosquitto/scripts/add_device.sh <id> <token>` once.
 
 ### 2. Load balancer (you configure once)
 
