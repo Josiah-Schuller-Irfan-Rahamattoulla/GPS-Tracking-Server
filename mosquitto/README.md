@@ -14,8 +14,10 @@ This replaces the **persistent device WebSocket**, which keeps the nRF9151 LTE m
 ## Quick start (local Docker)
 
 ```bash
-# 1) Generate TLS certs (once per deploy)
-./mosquitto/scripts/generate_certs.sh
+# 1) Generate TLS certs (once per machine / after clone)
+./mosquitto/scripts/ensure_certs.sh
+# Or for production hostname:
+# MQTT_TLS_HOSTNAME=gpstracking.josiahschuller.au ./mosquitto/scripts/generate_certs.sh
 
 # 2) Start stack (Mosquitto + API MQTT publisher/subscriber)
 docker compose up -d --build

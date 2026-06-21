@@ -74,8 +74,15 @@ services:
       - /bin/sh
       - -c
       - |
+        set -e
+        CERT_SRC=/mosquitto/config/certs
+        if [ ! -s "$${CERT_SRC}/ca.crt" ]; then
+          echo "FATAL: MQTT TLS certs missing in $${CERT_SRC}"
+          echo "Run: ./mosquitto/scripts/ensure_certs.sh   (or generate_certs.sh)"
+          exit 1
+        fi
         mkdir -p /mosquitto/data/certs
-        cp -f /mosquitto/config/certs/ca.crt /mosquitto/config/certs/server.crt /mosquitto/config/certs/server.key /mosquitto/data/certs/
+        cp -f "$${CERT_SRC}/ca.crt" "$${CERT_SRC}/server.crt" "$${CERT_SRC}/server.key" /mosquitto/data/certs/
         chown mosquitto:mosquitto /mosquitto/data/certs/ca.crt /mosquitto/data/certs/server.crt /mosquitto/data/certs/server.key
         chmod 644 /mosquitto/data/certs/ca.crt /mosquitto/data/certs/server.crt
         chmod 600 /mosquitto/data/certs/server.key
@@ -85,11 +92,11 @@ services:
         exec /usr/sbin/mosquitto -c /mosquitto/config/mosquitto.conf
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "mosquitto_sub -h localhost -p 1883 -t '$$SYS/broker/version' -C 1 -W 3 || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -p 1883 -t '$$SYS/broker/version' -C 1 -W 5 || exit 1"]
+      interval: 10s
+      timeout: 8s
+      retries: 8
+      start_period: 20s
 
   # FastAPI Server
   api:

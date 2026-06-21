@@ -1,5 +1,43 @@
 # Production MQTT setup (gpstracking.josiahschuller.au)
 
+## Start here (plain language)
+
+Your tracker needs **three things** to use MQTT in production:
+
+| Piece | What it is | Status today |
+|-------|------------|--------------|
+| **1. MQTT broker (Mosquitto)** | A small program that receives GPS from devices and sends kill-switch commands. Runs next to your API. | **Not running** on production |
+| **2. Port 8883 open** | Cellular devices connect to `gpstracking.josiahschuller.au:8883` (like HTTPS uses 443). | **Blocked** — connection times out |
+| **3. Firmware trusts the broker** | The tracker must know which TLS certificate to trust for MQTT (different from HTTPS). | **Fixed in firmware** — uses Mosquitto CA on sec tag 43; re-flash after server certs are final |
+
+**What “ECS sidecar” means (option a):** Your API runs in AWS ECS as a container. A **sidecar** is a second container in the **same task** — Mosquitto runs beside the API, shares a folder for passwords/certs, and exposes port 8883. See [ecs-task-mqtt-sidecar.example.json](./ecs-task-mqtt-sidecar.example.json).
+
+**What “MQTT CA in firmware” means (option b):** HTTPS uses Amazon’s certificate (already in the tracker). Mosquitto uses its **own** certificate from `generate_certs.sh`. The firmware now stores that Mosquitto CA separately so MQTT TLS works without changing HTTPS.
+
+### What to do next (in order)
+
+1. **Redeploy the API** — GitHub → Actions → “Build and Deploy to AWS” on branch `main` (gets MQTT code into production).
+2. **Generate broker certs** (once, on your laptop with Git Bash):
+   ```bash
+   cd GPS-Tracking-Server
+   MQTT_TLS_HOSTNAME=gpstracking.josiahschuller.au ./mosquitto/scripts/generate_certs.sh
+   ```
+3. **Run Mosquitto in production** — pick one:
+   - **Easier:** One EC2 instance, clone repo, `docker compose up -d` (same as local dev).
+   - **Keep ECS:** Add Mosquitto sidecar using the example JSON + EFS; add NLB on port 8883.
+4. **Open port 8883** in the AWS security group for the host/NLB.
+5. **Add your device to Mosquitto** (device ID + access token from the database):
+   ```bash
+   ./mosquitto/scripts/add_device.sh 67 YOUR_DEVICE_ACCESS_TOKEN
+   ```
+6. **Verify** — `/health` should show `"mqtt": { "publisher_connected": true, ... }`. Then:
+   ```bash
+   python test_mqtt.py --host gpstracking.josiahschuller.au --device-id 67 --token TOKEN --ca mosquitto/config/certs/ca.crt
+   ```
+7. **Flash firmware** with the MQTT build (includes Mosquitto CA). If you regenerate certs in step 2, rebuild firmware so `mqtt_ca_cert.h` matches.
+
+---
+
 Cellular devices connect to **MQTT/TLS on port 8883** at the same hostname as the HTTPS API. The FastAPI service publishes controls and subscribes to uplink on internal port **1883** only.
 
 ## Current production status
@@ -38,7 +76,7 @@ docker compose up -d --build
 
 Ensure `8883:8883` is published and the host firewall / security group allows **8883/TCP** from the internet (cellular devices have dynamic IPs).
 
-**ECS (recommended pattern):**
+**ECS (recommended pattern):** See [ecs-task-mqtt-sidecar.example.json](./ecs-task-mqtt-sidecar.example.json) for a copy-paste starting point.
 
 1. Add a **second container** in the task definition: `eclipse-mosquitto:2` with the same task, sharing an **EFS** or bind mount for:
    - `/mosquitto/config/passwd`

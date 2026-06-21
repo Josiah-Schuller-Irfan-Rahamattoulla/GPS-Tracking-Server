@@ -13,6 +13,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Generate MQTT TLS certs
+        run: |
+          chmod +x mosquitto/scripts/*.sh
+          MQTT_TLS_HOSTNAME=localhost mosquitto/scripts/ensure_certs.sh
+
       - name: Start services
         run: |
           docker compose up -d --build

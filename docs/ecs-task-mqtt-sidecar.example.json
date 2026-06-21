@@ -1,0 +1,96 @@
+{
+  "_comment": "Example ECS task definition fragment: API + Mosquitto sidecar. Merge into your existing task definition in AWS Console or IaC. Adjust ARNs, CPU/memory, and EFS IDs for your account.",
+  "family": "gps-tracking-api-with-mqtt",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "containerDefinitions": [
+    {
+      "name": "api",
+      "image": "831181103720.dkr.ecr.ap-southeast-2.amazonaws.com/gps-tracking:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "MQTT_ENABLED", "value": "1" },
+        { "name": "MQTT_HOST", "value": "127.0.0.1" },
+        { "name": "MQTT_PORT", "value": "1883" },
+        { "name": "MQTT_PASSWD_FILE", "value": "/mqtt-shared/passwd" },
+        { "name": "MQTT_ACL_FILE", "value": "/mqtt-shared/acl" }
+      ],
+      "secrets": [
+        { "name": "DATABASE_URI", "valueFrom": "arn:aws:secretsmanager:ap-southeast-2:ACCOUNT:secret:gps-tracking/database-uri" }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "mqtt-shared",
+          "containerPath": "/mqtt-shared",
+          "readOnly": false
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/gps-tracking",
+          "awslogs-region": "ap-southeast-2",
+          "awslogs-stream-prefix": "api"
+        }
+      }
+    },
+    {
+      "name": "mosquitto",
+      "image": "eclipse-mosquitto:2",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8883, "protocol": "tcp" }
+      ],
+      "entryPoint": ["/bin/sh", "-c"],
+      "command": [
+        "mkdir -p /mosquitto/data/certs && cp -f /mqtt-shared/certs/ca.crt /mqtt-shared/certs/server.crt /mqtt-shared/certs/server.key /mosquitto/data/certs/ && touch /mqtt-shared/passwd && exec /usr/sbin/mosquitto -c /mqtt-shared/mosquitto.conf"
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "mqtt-shared",
+          "containerPath": "/mqtt-shared",
+          "readOnly": false
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/gps-tracking",
+          "awslogs-region": "ap-southeast-2",
+          "awslogs-stream-prefix": "mosquitto"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "mqtt-shared",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-REPLACE_WITH_YOUR_EFS_ID",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "accessPointId": "fsap-REPLACE_WITH_ACCESS_POINT",
+          "iam": "ENABLED"
+        }
+      }
+    }
+  ],
+  "_networking_notes": [
+    "1. Attach an NLB listener on TCP 8883 -> target group -> ECS task port 8883 (Mosquitto container).",
+    "2. Open security group inbound 8883 from 0.0.0.0/0 (cellular devices have dynamic IPs).",
+    "3. ALB stays on 443 for HTTPS API; MQTT is separate on 8883.",
+    "4. Copy mosquitto.conf, certs/, passwd, acl to EFS at /mqtt-shared before first run.",
+    "5. Simpler alternative: run docker compose on one EC2 instead of Fargate sidecar."
+  ]
+}
