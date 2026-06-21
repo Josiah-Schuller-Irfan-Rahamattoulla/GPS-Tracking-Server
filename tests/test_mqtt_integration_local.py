@@ -61,6 +61,16 @@ def _provision_test_device() -> None:
     )
     assert result.returncode == 0, result.stderr or result.stdout
 
+    acl_py = f"from api.services.mqtt_provision import upsert_device_acl; upsert_device_acl({DEVICE_ID})"
+    acl = subprocess.run(
+        [*compose, "exec", "-T", "api", "python", "-c", acl_py],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert acl.returncode == 0, acl.stderr or acl.stdout
+
     reload = subprocess.run(
         [*compose, "kill", "-s", "HUP", "mosquitto"],
         cwd=REPO_ROOT,
@@ -129,3 +139,100 @@ def test_mqtt_controls_publish_and_subscribe():
     assert payload["device_id"] == 67
     assert payload["control_1"] is True
     assert payload["control_version"] == 99
+
+
+def _ensure_test_device_in_db() -> None:
+    compose = ["docker", "compose", "-f", os.path.join(REPO_ROOT, "docker-compose.yml")]
+    sql = (
+        f"INSERT INTO devices (device_id, access_token, sms_number) "
+        f"VALUES ({DEVICE_ID}, '{TOKEN}', '+15550000067') "
+        f"ON CONFLICT (device_id) DO UPDATE SET access_token = EXCLUDED.access_token;"
+    )
+    result = subprocess.run(
+        [
+            *compose,
+            "exec",
+            "-T",
+            "db",
+            "psql",
+            "-U",
+            "gpsuser",
+            "-d",
+            "gps_tracking",
+            "-c",
+            sql,
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+
+
+@pytest.mark.skipif(not _stack_available(), reason="Local Mosquitto not reachable on 8883")
+def test_mqtt_location_uplink_ingested():
+    _provision_test_device()
+    _ensure_test_device_in_db()
+
+    test_lat = -33.12345
+    test_lon = 151.67890
+    location_topic = f"devices/{DEVICE_ID}/location"
+    payload = json.dumps(
+        {
+            "latitude": test_lat,
+            "longitude": test_lon,
+            "speed": 5.0,
+            "timestamp": int(time.time() * 1000),
+        }
+    )
+
+    pub = mqtt.Client(
+        callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        client_id="pytest-mqtt-loc-pub",
+    )
+    pub.username_pw_set(username=DEVICE_ID, password=TOKEN)
+    pub.tls_set(ca_certs=CA_PATH, cert_reqs=ssl.CERT_REQUIRED)
+    pub.connect(HOST, PORT, keepalive=30)
+    pub.loop_start()
+    time.sleep(0.5)
+
+    result = pub.publish(location_topic, payload, qos=1)
+    result.wait_for_publish(timeout=10)
+    pub.loop_stop()
+    pub.disconnect()
+
+    deadline = time.time() + 15
+    row = ""
+    compose = ["docker", "compose", "-f", os.path.join(REPO_ROOT, "docker-compose.yml")]
+    while time.time() < deadline:
+        check = subprocess.run(
+            [
+                *compose,
+                "exec",
+                "-T",
+                "db",
+                "psql",
+                "-U",
+                "gpsuser",
+                "-d",
+                "gps_tracking",
+                "-t",
+                "-A",
+                "-c",
+                f"SELECT COUNT(*) FROM gps_data WHERE device_id = {DEVICE_ID} "
+                f"AND abs(latitude - ({test_lat})) < 0.0001 "
+                f"AND abs(longitude - ({test_lon})) < 0.0001;",
+            ],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert check.returncode == 0, check.stderr or check.stdout
+        row = (check.stdout or "").strip()
+        if row == "1":
+            break
+        time.sleep(0.5)
+
+    assert row == "1", f"Expected GPS row for lat={test_lat} lon={test_lon}, got {row!r}"

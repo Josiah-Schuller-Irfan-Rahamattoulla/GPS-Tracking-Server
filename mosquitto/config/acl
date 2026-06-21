@@ -1,0 +1,14 @@
+# Mosquitto ACL — devices on 8883/TLS only (acl_file is listener-scoped on 8883).
+#
+# Per-device blocks are appended by add_device.sh / mqtt_provision.py:
+#   user {device_id}
+#   topic read devices/{id}/controls
+#   topic write devices/{id}/location
+#   topic write devices/{id}/control_ack
+#   topic write devices/{id}/reset_ack
+
+user 67
+topic read devices/67/controls
+topic write devices/67/location
+topic write devices/67/control_ack
+topic write devices/67/reset_ack

@@ -42,6 +42,34 @@ fi
 
 echo "MQTT credentials updated for device_id=${DEVICE_ID}"
 
+ACL_FILE="/mosquitto/config/acl"
+TOPIC_PREFIX="${MQTT_TOPIC_PREFIX:-devices}"
+upsert_acl() {
+  local id="$1"
+  local tmp="${ACL_FILE}.tmp"
+  if [[ -f "${ACL_FILE}" ]]; then
+    awk -v uid="user ${id}" '
+      $0 == uid { skip=1; next }
+      skip && ($1 == "user" || $1 == "pattern") { skip=0 }
+      skip { next }
+      { print }
+    ' "${ACL_FILE}" > "${tmp}"
+    mv "${tmp}" "${ACL_FILE}"
+  fi
+  {
+    echo ""
+    echo "user ${id}"
+    echo "topic read ${TOPIC_PREFIX}/${id}/controls"
+    echo "topic write ${TOPIC_PREFIX}/${id}/location"
+    echo "topic write ${TOPIC_PREFIX}/${id}/control_ack"
+    echo "topic write ${TOPIC_PREFIX}/${id}/reset_ack"
+  } >> "${ACL_FILE}"
+}
+
+if [[ -f /mosquitto/config/mosquitto.conf ]]; then
+  upsert_acl "${DEVICE_ID}"
+fi
+
 # Mosquitto 2.x loads password_file at startup; reload after update.
 if [[ -f /mosquitto/config/mosquitto.conf ]]; then
   kill -HUP 1 2>/dev/null || true

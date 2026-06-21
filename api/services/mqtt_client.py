@@ -18,6 +18,8 @@ from typing import Any
 
 import paho.mqtt.client as mqtt
 
+from api.services.mqtt_topics import controls_topic, location_topic
+
 logger = logging.getLogger(__name__)
 
 _client: mqtt.Client | None = None
@@ -27,12 +29,6 @@ _client_lock = threading.Lock()
 def mqtt_enabled() -> bool:
     flag = os.getenv("MQTT_ENABLED", "1").strip().lower()
     return flag not in ("0", "false", "no", "off")
-
-
-def controls_topic(device_id: int) -> str:
-    prefix = os.getenv("MQTT_TOPIC_PREFIX", "devices").strip("/")
-    suffix = os.getenv("MQTT_CONTROLS_TOPIC_SUFFIX", "controls").strip("/")
-    return f"{prefix}/{device_id}/{suffix}"
 
 
 def build_controls_payload(device_id: int, control_data: dict[str, Any]) -> dict[str, Any]:
@@ -145,11 +141,15 @@ async def publish_device_controls_async(device_id: int, control_data: dict[str, 
 
 
 def mqtt_status() -> dict[str, Any]:
+    from api.services.mqtt_subscriber import subscriber_running
+
     connected = _client is not None and _client.is_connected()
     return {
         "enabled": mqtt_enabled(),
-        "connected": connected,
+        "publisher_connected": connected,
+        "subscriber_running": subscriber_running(),
         "host": _mqtt_host(),
         "port": _mqtt_port(),
-        "topic_example": controls_topic(0),
+        "controls_topic_example": controls_topic(0),
+        "location_topic_example": location_topic(0),
     }

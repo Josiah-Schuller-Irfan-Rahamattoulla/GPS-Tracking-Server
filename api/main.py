@@ -1,9 +1,10 @@
+import asyncio
 import os
 import uvicorn
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import os
 import psycopg2
 
 from api.endpoints import app_user_endpoints, device_data_endpoints, cell_location, realtime_endpoints, debug_endpoints
@@ -17,10 +18,22 @@ for _d in (_api_dir, _root_dir):
     if os.path.isfile(_env):
         load_dotenv(_env)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from api.services.mqtt_handler import set_event_loop
+    from api.services.mqtt_subscriber import start_mqtt_subscriber, stop_mqtt_subscriber
+
+    set_event_loop(asyncio.get_running_loop())
+    start_mqtt_subscriber()
+    yield
+    stop_mqtt_subscriber()
+
+
 app = FastAPI(
     title="GPS Tracking Server API",
     version="0.1.0",
     docs_url="/",
+    lifespan=lifespan,
 )
 
 # Health check endpoint
@@ -43,6 +56,10 @@ async def health_check():
         msg = f"unhealthy: {str(ex)}"
         result["database"] = msg
         raise HTTPException(status_code=503, detail=result)
+
+    from api.services.mqtt_client import mqtt_status
+
+    result["mqtt"] = mqtt_status()
     return result
 
 # CORS: use CORS_ORIGINS in production (comma-separated). Empty or unset = allow all (dev).
