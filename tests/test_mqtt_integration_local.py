@@ -175,8 +175,8 @@ def test_mqtt_location_uplink_ingested():
     _provision_test_device()
     _ensure_test_device_in_db()
 
-    test_lat = -33.12345
-    test_lon = 151.67890
+    test_lat = -33.12345 + (int(time.time() * 1000) % 10000) / 1000000.0
+    test_lon = 151.67890 + (int(time.time() * 1000) % 10000) / 1000000.0
     location_topic = f"devices/{DEVICE_ID}/location"
     payload = json.dumps(
         {

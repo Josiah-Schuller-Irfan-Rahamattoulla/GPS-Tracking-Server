@@ -36,8 +36,10 @@ if "BEGIN CERTIFICATE" not in pem:
     raise SystemExit(f"Not a PEM certificate: {ca_path}")
 
 lines = []
-for line in pem.splitlines():
-    lines.append(f'"{line}\\n" \\')
+split = pem.splitlines()
+for i, line in enumerate(split):
+    suffix = " \\" if i < len(split) - 1 else ""
+    lines.append(f'"{line}\\n"{suffix}')
 
 body = "\n".join(lines)
 
