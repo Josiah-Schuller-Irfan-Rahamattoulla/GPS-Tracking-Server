@@ -10,7 +10,9 @@
 user 67
 topic read devices/67/controls
 topic read devices/67/agnss_data
+topic read devices/67/cell_locate_response
 topic write devices/67/location
 topic write devices/67/control_ack
 topic write devices/67/reset_ack
 topic write devices/67/agnss_request
+topic write devices/67/cell_locate_request

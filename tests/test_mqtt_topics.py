@@ -3,6 +3,8 @@
 from api.services.mqtt_topics import (
     agnss_data_topic,
     agnss_request_topic,
+    cell_locate_request_topic,
+    cell_locate_response_topic,
     control_ack_topic,
     controls_topic,
     device_uplink_subscriptions,
@@ -19,6 +21,8 @@ def test_device_topics_default():
     assert reset_ack_topic(67) == "devices/67/reset_ack"
     assert agnss_request_topic(67) == "devices/67/agnss_request"
     assert agnss_data_topic(67) == "devices/67/agnss_data"
+    assert cell_locate_request_topic(67) == "devices/67/cell_locate_request"
+    assert cell_locate_response_topic(67) == "devices/67/cell_locate_response"
 
 
 def test_uplink_subscriptions():
@@ -28,6 +32,7 @@ def test_uplink_subscriptions():
         "devices/+/control_ack",
         "devices/+/reset_ack",
         "devices/+/agnss_request",
+        "devices/+/cell_locate_request",
     }
 
 

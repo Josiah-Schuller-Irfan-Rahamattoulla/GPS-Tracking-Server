@@ -19,7 +19,7 @@ from typing import Any
 
 import paho.mqtt.client as mqtt
 
-from api.services.mqtt_topics import controls_topic, agnss_data_topic, location_topic
+from api.services.mqtt_topics import controls_topic, agnss_data_topic, location_topic, cell_locate_response_topic
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +216,40 @@ def publish_agnss_chunks(device_id: int, agnss_data: bytes) -> bool:
 
 async def publish_agnss_chunks_async(device_id: int, agnss_data: bytes) -> bool:
     return await asyncio.to_thread(publish_agnss_chunks, device_id, agnss_data)
+
+
+def publish_cell_locate_response(device_id: int, payload: dict[str, Any]) -> bool:
+    """Publish cell locate result on devices/{id}/cell_locate_response (QoS 1)."""
+    if not mqtt_enabled():
+        return False
+
+    client = _connect_client()
+    if client is None:
+        return False
+
+    topic = cell_locate_response_topic(device_id)
+    qos = int(os.getenv("MQTT_CELL_LOCATE_QOS", "1"))
+    body = dict(payload)
+    body.setdefault("device_id", device_id)
+
+    try:
+        message = json.dumps(body, separators=(",", ":"))
+        info = client.publish(topic, message, qos=qos, retain=False)
+        info.wait_for_publish(timeout=float(os.getenv("MQTT_PUBLISH_TIMEOUT_SEC", "5")))
+        logger.info("MQTT cell_locate_response published device_id=%s topic=%s", device_id, topic)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "MQTT cell_locate_response publish failed device_id=%s topic=%s err=%s",
+            device_id,
+            topic,
+            exc,
+        )
+        return False
+
+
+async def publish_cell_locate_response_async(device_id: int, payload: dict[str, Any]) -> bool:
+    return await asyncio.to_thread(publish_cell_locate_response, device_id, payload)
 
 
 def mqtt_status() -> dict[str, Any]:

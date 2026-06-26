@@ -191,57 +191,12 @@ async def get_cell_location(
     
     Returns estimated lat/lon with accuracy radius in meters.
     """
+    from api.services.cell_locate_service import CellLocateUnavailable, resolve_cell_location
+
     if not request.cells:
         raise HTTPException(status_code=400, detail="At least one cell required")
-    
-    # TODO: Validate access_token against device_id if needed
-    
-    # Try providers in order of preference
-    provider = os.getenv("CELL_LOCATION_PROVIDER", "nrf_cloud").strip().lower()
-    if provider == "auto":
-        provider_order = ["nrf_cloud", "google", "here"]
-    else:
-        provider_order = [provider]
 
-    errors: list[str] = []
-
-    for candidate in provider_order:
-        try:
-            if candidate == "nrf_cloud":
-                api_key = auth_bearer_token()
-                if not api_key:
-                    errors.append("NRFCLOUD_OAT/NRFCLOUD_ORG_SLUG/NRFCLOUD_PROJECT_SLUG not configured (or legacy NRF_CLOUD_API_KEY missing)")
-                    continue
-                return await get_nrf_cloud_location(request.cells, api_key)
-
-            if candidate == "google":
-                api_key = os.getenv("GOOGLE_GEOLOCATION_API_KEY")
-                if not api_key:
-                    errors.append("GOOGLE_GEOLOCATION_API_KEY not configured")
-                    continue
-                return await get_google_location(request.cells, api_key)
-
-            if candidate == "here":
-                api_key = os.getenv("HERE_API_KEY")
-                if not api_key:
-                    errors.append("HERE_API_KEY not configured")
-                    continue
-                return await get_here_location(request.cells, api_key)
-
-            errors.append(f"Unknown CELL_LOCATION_PROVIDER: {candidate}")
-
-        except httpx.HTTPStatusError as e:
-            logger.error("Cell location provider error: %s - %s", e.response.status_code, e.response.text)
-            errors.append(f"{candidate} HTTP {e.response.status_code}")
-        except httpx.RequestError as e:
-            logger.error("Cell location request error: %s", str(e))
-            errors.append(f"{candidate} request failed")
-        except Exception as e:
-            logger.error("Unexpected error in cell location: %s", str(e))
-            errors.append(f"{candidate} unexpected error")
-
-    detail = "Cell location unavailable"
-    if errors:
-        detail = f"Cell location unavailable: {', '.join(errors)}"
-
-    raise HTTPException(status_code=503, detail=detail)
+    try:
+        return await resolve_cell_location(request.cells)
+    except CellLocateUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

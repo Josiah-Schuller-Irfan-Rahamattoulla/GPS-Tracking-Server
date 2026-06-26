@@ -38,6 +38,14 @@ def agnss_data_topic(device_id: int) -> str:
     return device_topic(device_id, os.getenv("MQTT_AGNSS_DATA_TOPIC_SUFFIX", "agnss_data"))
 
 
+def cell_locate_request_topic(device_id: int) -> str:
+    return device_topic(device_id, os.getenv("MQTT_CELL_LOCATE_REQUEST_SUFFIX", "cell_locate_request"))
+
+
+def cell_locate_response_topic(device_id: int) -> str:
+    return device_topic(device_id, os.getenv("MQTT_CELL_LOCATE_RESPONSE_SUFFIX", "cell_locate_response"))
+
+
 def device_uplink_subscriptions() -> list[tuple[str, int]]:
     """Wildcard subscriptions for the API MQTT bridge (internal broker)."""
     prefix = topic_prefix()
@@ -47,6 +55,7 @@ def device_uplink_subscriptions() -> list[tuple[str, int]]:
         (f"{prefix}/+/control_ack", qos),
         (f"{prefix}/+/reset_ack", qos),
         (f"{prefix}/+/agnss_request", qos),
+        (f"{prefix}/+/cell_locate_request", qos),
     ]
 
 

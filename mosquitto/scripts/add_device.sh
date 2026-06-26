@@ -61,10 +61,12 @@ upsert_acl() {
     echo "user ${id}"
     echo "topic read ${TOPIC_PREFIX}/${id}/controls"
     echo "topic read ${TOPIC_PREFIX}/${id}/agnss_data"
+    echo "topic read ${TOPIC_PREFIX}/${id}/cell_locate_response"
     echo "topic write ${TOPIC_PREFIX}/${id}/location"
     echo "topic write ${TOPIC_PREFIX}/${id}/control_ack"
     echo "topic write ${TOPIC_PREFIX}/${id}/reset_ack"
     echo "topic write ${TOPIC_PREFIX}/${id}/agnss_request"
+    echo "topic write ${TOPIC_PREFIX}/${id}/cell_locate_request"
   } >> "${ACL_FILE}"
 }
 

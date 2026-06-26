@@ -22,6 +22,7 @@ from api.endpoints.realtime_endpoints import (
 from api.services.agnss_fetch import fetch_agnss_bytes
 from api.services.device_ingest import ingest_location
 from api.services.mqtt_client import publish_agnss_chunks_async
+from api.services.mqtt_client import publish_cell_locate_response_async
 from api.services.mqtt_topics import parse_device_id_from_topic
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,8 @@ def handle_mqtt_message(topic: str, payload_raw: bytes) -> None:
         _handle_reset_ack(device_id, payload)
     elif suffix == "agnss_request":
         _handle_agnss_request(device_id, payload)
+    elif suffix == "cell_locate_request":
+        _handle_cell_locate_request(device_id, payload)
     else:
         logger.debug("MQTT unhandled suffix=%s topic=%s", suffix, topic)
 
@@ -234,3 +237,63 @@ def _handle_agnss_request(device_id: int, payload: dict[str, Any]) -> None:
             logger.warning("MQTT agnss_data publish failed device_id=%s", device_id)
 
     _schedule(_fetch_and_publish())
+
+
+def _handle_cell_locate_request(device_id: int, payload: dict[str, Any]) -> None:
+    body = _unwrap_data(payload)
+
+    async def _resolve_and_publish():
+        from api.services.cell_locate_service import (
+            CellLocateUnavailable,
+            parse_cell_infos,
+            resolve_cell_location,
+        )
+
+        try:
+            cells = parse_cell_infos(body.get("cells"))
+        except (TypeError, ValueError, KeyError) as exc:
+            logger.warning(
+                "MQTT cell_locate_request invalid fields device_id=%s err=%s", device_id, exc
+            )
+            await publish_cell_locate_response_async(
+                device_id, {"error": "invalid_request", "detail": str(exc)}
+            )
+            return
+
+        try:
+            result = await resolve_cell_location(cells)
+        except CellLocateUnavailable as exc:
+            logger.warning("MQTT cell_locate_request unavailable device_id=%s err=%s", device_id, exc)
+            await publish_cell_locate_response_async(
+                device_id, {"error": "unavailable", "detail": str(exc)}
+            )
+            return
+        except ValueError as exc:
+            logger.warning("MQTT cell_locate_request bad request device_id=%s err=%s", device_id, exc)
+            await publish_cell_locate_response_async(
+                device_id, {"error": "invalid_request", "detail": str(exc)}
+            )
+            return
+
+        ok = await publish_cell_locate_response_async(
+            device_id,
+            {
+                "latitude": result.latitude,
+                "longitude": result.longitude,
+                "accuracy": result.accuracy,
+                "source": result.source,
+            },
+        )
+        if ok:
+            logger.info(
+                "MQTT cell_locate_request fulfilled device_id=%s lat=%.5f lon=%.5f acc=%.0f src=%s",
+                device_id,
+                result.latitude,
+                result.longitude,
+                result.accuracy,
+                result.source,
+            )
+        else:
+            logger.warning("MQTT cell_locate_response publish failed device_id=%s", device_id)
+
+    _schedule(_resolve_and_publish())

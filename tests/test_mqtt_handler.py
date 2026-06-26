@@ -80,3 +80,49 @@ def test_handle_agnss_request(mock_schedule, mock_fetch, mock_publish):
     mock_fetch.assert_awaited_once()
     assert mock_fetch.call_args.kwargs["mcc"] == 505
     mock_publish.assert_awaited_once_with(67, b"\x01\x02")
+
+
+@patch("api.services.mqtt_handler.publish_cell_locate_response_async", new_callable=AsyncMock, return_value=True)
+@patch("api.services.mqtt_handler._schedule")
+def test_handle_cell_locate_request(mock_schedule, mock_publish):
+    handle_mqtt_message(
+        "devices/67/cell_locate_request",
+        json.dumps(
+            {
+                "device_id": 67,
+                "cells": [
+                    {
+                        "cellId": 12345,
+                        "mcc": 505,
+                        "mnc": 1,
+                        "lac": 100,
+                        "tac": 100,
+                        "signal": -95,
+                    }
+                ],
+            }
+        ).encode(),
+    )
+
+    mock_schedule.assert_called_once()
+    coro = mock_schedule.call_args[0][0]
+    with patch(
+        "api.services.cell_locate_service.resolve_cell_location",
+        new_callable=AsyncMock,
+    ) as mock_resolve:
+        mock_resolve.return_value = type(
+            "R",
+            (),
+            {
+                "latitude": -33.86,
+                "longitude": 151.20,
+                "accuracy": 500.0,
+                "source": "google",
+            },
+        )()
+        asyncio.run(coro)
+
+    mock_publish.assert_awaited_once()
+    payload = mock_publish.call_args[0][1]
+    assert payload["latitude"] == -33.86
+    assert payload["source"] == "google"

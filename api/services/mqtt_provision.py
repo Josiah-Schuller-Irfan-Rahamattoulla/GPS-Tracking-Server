@@ -13,11 +13,13 @@ import subprocess
 from api.services.mqtt_client import mqtt_enabled
 from api.services.mqtt_topics import (
     agnss_data_topic,
+    cell_locate_response_topic,
     control_ack_topic,
     controls_topic,
     location_topic,
     reset_ack_topic,
     agnss_request_topic,
+    cell_locate_request_topic,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,10 +38,12 @@ def _device_acl_lines(device_id: int) -> list[str]:
         f"user {device_id}",
         f"topic read {controls_topic(device_id)}",
         f"topic read {agnss_data_topic(device_id)}",
+        f"topic read {cell_locate_response_topic(device_id)}",
         f"topic write {location_topic(device_id)}",
         f"topic write {control_ack_topic(device_id)}",
         f"topic write {reset_ack_topic(device_id)}",
         f"topic write {agnss_request_topic(device_id)}",
+        f"topic write {cell_locate_request_topic(device_id)}",
     ]
 
 
