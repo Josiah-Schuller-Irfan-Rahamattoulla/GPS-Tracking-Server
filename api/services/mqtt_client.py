@@ -190,6 +190,7 @@ def publish_agnss_chunks(device_id: int, agnss_data: bytes) -> bool:
     total = (len(agnss_data) + chunk_size - 1) // chunk_size
 
     try:
+        publishes = []
         for seq in range(total):
             start = seq * chunk_size
             chunk = agnss_data[start : start + chunk_size]
@@ -200,7 +201,10 @@ def publish_agnss_chunks(device_id: int, agnss_data: bytes) -> bool:
             }
             payload = json.dumps(payload_obj, separators=(",", ":"))
             info = client.publish(topic, payload, qos=qos, retain=False)
-            info.wait_for_publish(timeout=float(os.getenv("MQTT_PUBLISH_TIMEOUT_SEC", "5")))
+            publishes.append(info)
+        timeout = float(os.getenv("MQTT_PUBLISH_TIMEOUT_SEC", "5"))
+        for info in publishes:
+            info.wait_for_publish(timeout=timeout)
         logger.info(
             "MQTT A-GNSS published device_id=%s topic=%s bytes=%s chunks=%s",
             device_id,
